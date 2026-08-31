@@ -1,26 +1,29 @@
-# Mini Discord Voice 2.1
+# Mini Discord Voice 2.3
 
-Sala de voz minimalista com WebRTC + Socket.IO.
+Sala minimalista de voz + compartilhamento de tela usando WebRTC, Socket.IO e TURN.
 
-## O que já está pronto
+## Recursos
 
-- Frontend estático compatível com Netlify.
-- Backend Node/Socket.IO compatível com Render.
-- Render também consegue servir o frontend para teste.
-- Salas por URL: `/id-da-sala`.
-- Áudio multiusuário em WebRTC mesh.
-- Indicador verde individual de quem está falando.
+- Voz multiusuário em WebRTC mesh.
+- TURN Metered para redes com NAT/CGNAT restritivo.
+- ICE restart automático em falhas de conexão.
+- Compartilhamento de tela em até 1080p / 30 FPS.
+- Apenas uma pessoa compartilhando a tela por vez.
+- Fullscreen para a tela compartilhada.
+- Indicador visual de quem está compartilhando.
+- Bolinha verde individual de quem está falando.
 - Mute local.
-- Redução de ruído do navegador com toggle.
-- Echo cancellation e automatic gain control.
-- Reconexão Socket.IO.
-- Rewrite do Netlify para links de sala.
-- Endpoint `/health` para o Render.
+- Noise suppression, echo cancellation e automatic gain control.
+- Frontend estático para Netlify.
+- Backend Node/Socket.IO para Render.
+- Salas por URL `/id-da-sala`.
 
 ## Estrutura
 
+O projeto já está na raiz, sem pasta duplicada:
+
 ```text
-mini-discord-voice/
+.
 ├─ package.json
 ├─ server.js
 ├─ render.yaml
@@ -35,122 +38,96 @@ mini-discord-voice/
    └─ _redirects
 ```
 
-## Testar localmente
+## Atualizar seu repositório existente
+
+Abra a pasta raiz do repositório clonado e copie o conteúdo deste pacote por cima dela.
+
+Depois:
 
 ```bash
-npm install
-npm start
+git status
+git add .
+git commit -m "Add screen sharing"
+git push origin main
 ```
 
-Abra:
+Não copie a pasta do projeto para dentro de outra pasta do projeto. Copie `public`, `scripts`, `server.js`, `package.json`, etc. diretamente para a raiz que contém `.git`.
+
+## Render
+
+Use o mesmo Web Service que já está funcionando.
+
+Configuração:
 
 ```text
-http://localhost:3000
+Build Command: npm install
+Start Command: npm start
+Health Check: /health
 ```
 
-O site cria automaticamente uma sala, por exemplo:
+Variáveis:
 
 ```text
-http://localhost:3000/14f82d6a1c41437fab
+CLIENT_ORIGIN=*
+TURN_USERNAME=<username da credencial Metered>
+TURN_CREDENTIAL=<password da credencial Metered>
+TURN_URLS=turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp
 ```
 
-## 1. Publicar backend no Render
-
-Suba esta pasta inteira para um repositório no GitHub.
-
-No Render:
-
-1. `New` -> `Web Service`.
-2. Conecte o repositório.
-3. Runtime: `Node`.
-4. Build Command: `npm install`.
-5. Start Command: `npm start`.
-6. Publique.
-
-O `render.yaml` já contém a mesma configuração caso você prefira usar Blueprint.
-
-Depois do deploy você receberá uma URL parecida com:
-
-```text
-https://mini-discord-voice.onrender.com
-```
+Se o Render estiver configurado com `Root Directory=mini-discord-voice-2.1` por causa do repositório atual, mantenha isso enquanto essa pasta continuar sendo a raiz do app dentro do GitHub.
 
 Teste:
 
 ```text
-https://mini-discord-voice.onrender.com/health
+https://SEU-SERVICO.onrender.com/health
 ```
 
-Deve responder com `ok: true`.
+O retorno deve incluir:
 
-## 2. Publicar frontend no Netlify
+```json
+{
+  "ok": true,
+  "version": "2.3.0",
+  "turnConfigured": true
+}
+```
 
-Use o mesmo repositório no Netlify.
+## Netlify
 
-A configuração já está em `netlify.toml`:
+A configuração continua:
 
 ```text
 Build command: npm run build:netlify
 Publish directory: public
 ```
 
-Antes do deploy, adicione esta variável de ambiente no Netlify:
+Variável:
 
 ```text
 SOCKET_SERVER_URL=https://SEU-SERVICO.onrender.com
 ```
 
-Use exatamente a URL HTTPS fornecida pelo Render, sem barra no final.
+Se o Netlify atual usa `Base directory=mini-discord-voice-2.1`, mantenha igual para não quebrar o repositório existente.
 
-Depois publique o site.
+## Compartilhamento de tela
 
-## 3. Opcional: restringir o backend ao seu Netlify
+O botão `Compartilhar tela` usa `navigator.mediaDevices.getDisplayMedia()`.
 
-Quando souber o domínio final do Netlify, no Render troque:
-
-```text
-CLIENT_ORIGIN=*
-```
-
-por:
+Configuração de captura:
 
 ```text
-CLIENT_ORIGIN=https://seu-site.netlify.app
+Resolução ideal: 1920x1080
+FPS máximo: 30
+Bitrate alvo: 2.5 Mbps por peer
+Áudio da tela: desativado
 ```
 
-Para permitir mais de um domínio, separe por vírgula:
+O vídeo usa a mesma conexão WebRTC da voz. Cada peer já negocia um transceiver de vídeo desde o início, então iniciar/parar o compartilhamento usa `RTCRtpSender.replaceTrack()` e não cria conexões extras.
 
-```text
-CLIENT_ORIGIN=https://site.netlify.app,https://seudominio.com
-```
+O servidor mantém um lock por sala para impedir dois compartilhamentos simultâneos.
 
-## Ruído
+## Escala
 
-A captura solicita:
+A arquitetura continua WebRTC mesh. Para poucos amigos funciona bem. Compartilhamento de tela aumenta bastante o upload do compartilhador porque ele envia uma cópia do vídeo para cada participante.
 
-```js
-echoCancellation: true
-noiseSuppression: true
-autoGainControl: true
-channelCount: 1
-```
-
-O botão `Ruído` usa `MediaStreamTrack.applyConstraints()` para ligar/desligar `noiseSuppression` enquanto a chamada está ativa.
-
-Esse recurso depende do navegador e do dispositivo. Chrome/Edge modernos normalmente expõem esse controle.
-
-## Indicador de fala
-
-Cada stream é analisado localmente com Web Audio API. Quando o RMS do áudio passa do limiar, a bolinha do participante fica verde por alguns milissegundos para evitar flicker.
-
-Nenhum áudio é enviado para o Render. O Render é usado somente para sinalização Socket.IO/WebRTC.
-
-## TURN
-
-Esta versão usa STUN público do Google, suficiente para testes em muitas redes.
-
-Algumas combinações de NAT/firewall podem impedir a conexão P2P. Nesse caso, adicione um servidor TURN em `rtcConfiguration` dentro de `public/app.js`.
-
-## Observação sobre escala
-
-A chamada usa WebRTC mesh. Para brincar com poucos amigos funciona bem. Para salas grandes, migre a mídia para um SFU como LiveKit ou mediasoup.
+Para salas maiores, a arquitetura indicada é um SFU como LiveKit ou mediasoup.

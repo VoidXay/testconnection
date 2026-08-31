@@ -1,8 +1,8 @@
 {
   "name": "mini-discord-voice",
-  "version": "2.1.0",
+  "version": "2.3.0",
   "private": true,
-  "description": "Minimal multi-user voice room using WebRTC and Socket.IO",
+  "description": "Minimal multi-user voice room with WebRTC screen sharing, TURN and Socket.IO",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

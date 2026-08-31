@@ -1,3 +1,1 @@
-window.MINI_DISCORD_CONFIG = {
-    socketServerUrl: ""
-};
+window.MINI_DISCORD_CONFIG = {"socketServerUrl":""};

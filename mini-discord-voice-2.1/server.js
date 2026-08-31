@@ -10,6 +10,8 @@ const TURN_USERNAME = String(process.env.TURN_USERNAME || "").trim();
 const TURN_CREDENTIAL = String(process.env.TURN_CREDENTIAL || "").trim();
 const TURN_URLS = parseTurnUrls(process.env.TURN_URLS);
 
+const screenSharers = new Map();
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -58,6 +60,7 @@ app.get("/health", (_req, res) => {
     res.status(200).json({
         ok: true,
         service: "mini-discord-voice",
+        version: "2.3.0",
         turnConfigured: Boolean(TURN_USERNAME && TURN_CREDENTIAL)
     });
 });
@@ -123,6 +126,7 @@ io.on("connection", (socket) => {
 
         const room = io.sockets.adapter.rooms.get(roomId);
         const existingParticipants = room ? Array.from(room) : [];
+        const screenSharerId = getActiveScreenSharer(roomId);
 
         socket.join(roomId);
         socket.data.roomId = roomId;
@@ -131,7 +135,8 @@ io.on("connection", (socket) => {
             roomId,
             participantId: socket.id,
             existingParticipants,
-            participantCount: existingParticipants.length + 1
+            participantCount: existingParticipants.length + 1,
+            screenSharerId
         });
 
         socket.to(roomId).emit("participant-joined", {
@@ -140,6 +145,39 @@ io.on("connection", (socket) => {
         });
 
         emitParticipantCount(roomId);
+    });
+
+    socket.on("request-screen-share", (_payload, callback) => {
+        const reply = typeof callback === "function" ? callback : () => {};
+        const roomId = socket.data.roomId;
+
+        if (!isSocketInRoom(socket, roomId)) {
+            reply({ ok: false, reason: "not-in-room" });
+            return;
+        }
+
+        const currentSharerId = getActiveScreenSharer(roomId);
+
+        if (currentSharerId && currentSharerId !== socket.id) {
+            reply({
+                ok: false,
+                reason: "already-sharing",
+                participantId: currentSharerId
+            });
+            return;
+        }
+
+        screenSharers.set(roomId, socket.id);
+        socket.data.screenSharing = true;
+
+        reply({ ok: true });
+        io.to(roomId).emit("screen-share-started", {
+            participantId: socket.id
+        });
+    });
+
+    socket.on("stop-screen-share", () => {
+        releaseScreenShare(socket);
     });
 
     socket.on("webrtc-offer", ({ targetId, offer } = {}) => {
@@ -185,6 +223,8 @@ io.on("connection", (socket) => {
         if (!roomId) {
             return;
         }
+
+        releaseScreenShare(socket, roomId);
 
         socket.to(roomId).emit("participant-left", {
             participantId: socket.id
@@ -234,6 +274,14 @@ function isValidRoomId(roomId) {
     );
 }
 
+function isSocketInRoom(socket, roomId) {
+    return (
+        typeof roomId === "string" &&
+        socket.data.roomId === roomId &&
+        socket.rooms.has(roomId)
+    );
+}
+
 function canSignal(socket, targetId) {
     const roomId = socket.data.roomId;
 
@@ -246,12 +294,50 @@ function canSignal(socket, targetId) {
     return Boolean(room && room.has(socket.id) && room.has(targetId));
 }
 
+function getActiveScreenSharer(roomId) {
+    if (!roomId) {
+        return null;
+    }
+
+    const sharerId = screenSharers.get(roomId);
+    if (!sharerId) {
+        return null;
+    }
+
+    const room = io.sockets.adapter.rooms.get(roomId);
+
+    if (!room || !room.has(sharerId)) {
+        screenSharers.delete(roomId);
+        return null;
+    }
+
+    return sharerId;
+}
+
+function releaseScreenShare(socket, forcedRoomId) {
+    const roomId = forcedRoomId || socket.data.roomId;
+
+    if (!roomId || screenSharers.get(roomId) !== socket.id) {
+        socket.data.screenSharing = false;
+        return;
+    }
+
+    screenSharers.delete(roomId);
+    socket.data.screenSharing = false;
+
+    io.to(roomId).emit("screen-share-stopped", {
+        participantId: socket.id
+    });
+}
+
 function leaveCurrentRoom(socket) {
     const roomId = socket.data.roomId;
 
     if (!roomId) {
         return;
     }
+
+    releaseScreenShare(socket, roomId);
 
     socket.to(roomId).emit("participant-left", {
         participantId: socket.id
@@ -271,11 +357,15 @@ function emitParticipantCount(roomId) {
     const room = io.sockets.adapter.rooms.get(roomId);
     const participantCount = room ? room.size : 0;
 
+    if (participantCount === 0) {
+        screenSharers.delete(roomId);
+    }
+
     io.to(roomId).emit("participant-count", {
         participantCount
     });
 }
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Mini Discord Voice listening on port ${PORT}`);
+    console.log(`Mini Discord Voice 2.3 listening on port ${PORT}`);
 });

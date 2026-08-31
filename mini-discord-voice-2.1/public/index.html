@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#111214">
     <meta
         name="description"
-        content="Sala de voz simples e privada usando WebRTC."
+        content="Sala privada de voz e compartilhamento de tela usando WebRTC."
     >
     <title>Mini Voice</title>
     <link rel="stylesheet" href="/style.css">
@@ -50,6 +50,12 @@
                             <strong>Você</strong>
                             <span id="localSidebarStatus">conectando...</span>
                         </div>
+                        <span class="screen-mini-badge" data-role="screen-badge" aria-label="Compartilhando tela">
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <rect x="3" y="4" width="18" height="13" rx="2"/>
+                                <path d="M9 21h6M12 17v4"/>
+                            </svg>
+                        </span>
                         <span class="voice-dot" aria-label="Falando"></span>
                     </div>
                 </div>
@@ -79,7 +85,7 @@
                 </div>
             </header>
 
-            <section class="content">
+            <section class="content" id="content">
                 <div class="content-heading">
                     <div>
                         <h2>Quem está aqui</h2>
@@ -90,8 +96,29 @@
                     </button>
                 </div>
 
+                <section class="screen-share-stage" id="screenShareStage" hidden>
+                    <div class="screen-share-header">
+                        <div>
+                            <span class="screen-share-kicker">COMPARTILHAMENTO DE TELA</span>
+                            <strong id="screenOwnerText">Conectando tela...</strong>
+                        </div>
+                        <button class="screen-icon-button" id="fullscreenButton" type="button" title="Tela cheia" aria-label="Tela cheia">
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="screen-video-frame">
+                        <video id="screenVideo" autoplay playsinline></video>
+                        <div class="screen-placeholder" id="screenPlaceholder">
+                            <span>Conectando compartilhamento...</span>
+                        </div>
+                    </div>
+                </section>
+
                 <div class="participant-grid" id="participantGrid">
                     <article class="participant-card" data-participant-id="self">
+                        <span class="screen-card-badge" data-role="screen-badge">TELA</span>
                         <div class="avatar-wrap">
                             <div class="avatar">EU</div>
                             <span class="voice-dot large" aria-label="Falando"></span>
@@ -123,6 +150,14 @@
                         </svg>
                         <span id="noiseText">Ruído</span>
                         <span class="control-state-dot"></span>
+                    </button>
+
+                    <button class="control-button" id="screenButton" type="button" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <rect x="3" y="4" width="18" height="13" rx="2"/>
+                            <path d="M9 21h6M12 17v4"/>
+                        </svg>
+                        <span id="screenText">Compartilhar tela</span>
                     </button>
                 </div>
 
