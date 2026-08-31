@@ -60,7 +60,7 @@ app.get("/health", (_req, res) => {
     res.status(200).json({
         ok: true,
         service: "mini-discord-voice",
-        version: "2.3.0",
+        version: "2.3.1",
         turnConfigured: Boolean(TURN_USERNAME && TURN_CREDENTIAL)
     });
 });

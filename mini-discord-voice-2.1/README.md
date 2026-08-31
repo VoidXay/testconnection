@@ -1,4 +1,4 @@
-# Mini Discord Voice 2.3
+# Mini Discord Voice 2.3.1
 
 Sala minimalista de voz + compartilhamento de tela usando WebRTC, Socket.IO e TURN.
 
@@ -87,7 +87,7 @@ O retorno deve incluir:
 ```json
 {
   "ok": true,
-  "version": "2.3.0",
+  "version": "2.3.1",
   "turnConfigured": true
 }
 ```

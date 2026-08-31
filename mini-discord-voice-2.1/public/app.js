@@ -549,8 +549,12 @@ function getLocalScreenTrack() {
 async function attachScreenTrackToAllPeers(screenTrack) {
     const updates = [];
 
-    for (const peer of peers.values()) {
-        updates.push(attachScreenTrackToPeer(peer, screenTrack));
+    for (const [participantId, peer] of peers.entries()) {
+        updates.push(
+            attachScreenTrackToPeer(peer, screenTrack).then(() =>
+                renegotiatePeerForScreenShare(participantId, peer)
+            )
+        );
     }
 
     await Promise.allSettled(updates);
@@ -586,13 +590,68 @@ async function configureScreenSender(sender) {
 async function detachScreenTrackFromAllPeers() {
     const updates = [];
 
-    for (const peer of peers.values()) {
-        if (peer.screenSender && peer.connection.signalingState !== "closed") {
-            updates.push(peer.screenSender.replaceTrack(null));
+    for (const [participantId, peer] of peers.entries()) {
+        if (!peer.screenSender || peer.connection.signalingState === "closed") {
+            continue;
         }
+
+        updates.push(
+            peer.screenSender
+                .replaceTrack(null)
+                .then(() => renegotiatePeerForScreenShare(participantId, peer))
+        );
     }
 
     await Promise.allSettled(updates);
+}
+
+async function renegotiatePeerForScreenShare(participantId, peer) {
+    const connection = peer.connection;
+
+    if (connection.signalingState === "closed") {
+        return;
+    }
+
+    await waitForStableSignalingState(connection);
+
+    if (connection.signalingState !== "stable") {
+        throw new Error("Peer signaling state did not become stable in time.");
+    }
+
+    await createAndSendOffer(participantId, peer, false);
+}
+
+function waitForStableSignalingState(connection, timeoutMs = 5000) {
+    if (connection.signalingState === "stable") {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        let settled = false;
+
+        const finish = () => {
+            if (settled) {
+                return;
+            }
+
+            settled = true;
+            clearTimeout(timer);
+            connection.removeEventListener("signalingstatechange", onChange);
+            resolve();
+        };
+
+        const onChange = () => {
+            if (
+                connection.signalingState === "stable" ||
+                connection.signalingState === "closed"
+            ) {
+                finish();
+            }
+        };
+
+        const timer = setTimeout(finish, timeoutMs);
+        connection.addEventListener("signalingstatechange", onChange);
+    });
 }
 
 function setActiveScreenSharer(participantId) {
@@ -881,6 +940,11 @@ socket.on("webrtc-offer", async ({ senderId, offer }) => {
         ensureParticipantUi(senderId);
 
         const peer = await createPeerConnection(senderId, false);
+
+        if (peer.connection.signalingState === "have-local-offer") {
+            await peer.connection.setLocalDescription({ type: "rollback" });
+        }
+
         await peer.connection.setRemoteDescription(offer);
         await flushIceCandidates(peer);
 
