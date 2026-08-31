@@ -1,0 +1,11 @@
+GURU 3.1 - DEPLOY RAPIDO
+
+1. Substitua os arquivos dentro de testconnection-repo-clean\mini-discord-voice-2.1
+2. Na raiz testconnection-repo-clean:
+   git status
+   git add .
+   git commit -m "Upgrade Guru UI and mute states"
+   git push origin main
+3. Aguarde Render e Netlify.
+4. Se Netlify mantiver cache antigo: Clear cache and deploy site.
+5. Atualize os navegadores com Ctrl+F5.

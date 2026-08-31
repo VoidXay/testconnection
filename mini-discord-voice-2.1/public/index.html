@@ -8,29 +8,28 @@
         name="description"
         content="Sala privada de voz e compartilhamento de tela com WebRTC."
     >
-    <title>Mini Meet</title>
+    <title>Guru — Private Rooms</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <section class="prejoin" id="prejoin">
         <div class="prejoin-shell">
             <div class="prejoin-intro">
-                <a class="brand" href="/" aria-label="Mini Meet">
+                <a class="brand" href="/" aria-label="Guru">
                     <span class="brand-icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none">
                             <rect x="3" y="5" width="13" height="14" rx="3"/>
                             <path d="M16 10l5-3v10l-5-3"/>
                         </svg>
                     </span>
-                    <span>Mini Meet</span>
+                    <span>Guru</span>
                 </a>
 
                 <div class="prejoin-copy">
-                    <span class="prejoin-kicker">SALA PRIVADA</span>
-                    <h1>Entre do seu jeito.</h1>
+                    <span class="prejoin-kicker">GURU / SALA PRIVADA</span>
+                    <h1>Converse sem distrações.</h1>
                     <p>
-                        Escolha como você quer aparecer para seus amigos e entre na chamada.
-                        Sem conta, sem cadastro e sem perfil falso.
+                        Uma sala privada, simples e focada em conversa. Escolha seu nome, sua foto e entre.
                     </p>
                 </div>
 
@@ -109,11 +108,11 @@
                             <path d="M16 10l5-3v10l-5-3"/>
                         </svg>
                     </span>
-                    <span>Mini Meet</span>
+                    <span>Guru</span>
                 </div>
                 <span class="topbar-divider"></span>
                 <div class="room-meta">
-                    <strong>Geral</strong>
+                    <strong>Guru Room</strong>
                     <span id="roomCodeText">Sala privada</span>
                 </div>
             </div>
@@ -147,7 +146,7 @@
             <section class="content" id="content">
                 <div class="meeting-heading">
                     <div>
-                        <h1>Geral</h1>
+                        <h1>Guru Room</h1>
                         <p id="roomDescription">Preparando seu microfone.</p>
                     </div>
                     <button class="layout-button" id="layoutButton" type="button" title="Alternar tamanho dos cards">
@@ -200,6 +199,12 @@
                             <span class="voice-dot large" aria-label="Falando"></span>
                         </div>
                         <span class="participant-status" id="localStatus">Entrando...</span>
+                        <span class="mute-badge" data-role="mute-badge" aria-label="Microfone desligado" title="Microfone desligado">
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M9 9v2a3 3 0 005.12 2.12M15 9V6a3 3 0 00-5.12-2.12M5 10v1a7 7 0 0011.2 5.6M19 10v1a7 7 0 01-.42 2.38M12 18v3M9 21h6M3 3l18 18"/>
+                            </svg>
+                            <span>Mic off</span>
+                        </span>
                     </article>
                 </div>
 
@@ -241,6 +246,9 @@
                                 <path d="M9 21h6M12 17v4"/>
                             </svg>
                         </span>
+                        <span class="mini-mute-badge" data-role="mute-badge" aria-label="Microfone desligado" title="Microfone desligado">
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 9v2a3 3 0 005.12 2.12M15 9V6a3 3 0 00-5.12-2.12M5 10v1a7 7 0 0011.2 5.6M19 10v1a7 7 0 01-.42 2.38M3 3l18 18"/></svg>
+                        </span>
                         <span class="voice-dot" aria-label="Falando"></span>
                     </div>
                 </div>
@@ -258,7 +266,7 @@
 
         <footer class="controls">
             <div class="meeting-info-mini">
-                <strong>Geral</strong>
+                <strong>Guru</strong>
                 <span id="footerRoomCode">Sala privada</span>
             </div>
 

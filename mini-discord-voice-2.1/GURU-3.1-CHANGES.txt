@@ -1,0 +1,28 @@
+GURU 3.1
+
+VISUAL
+- Rebrand completo de Mini Meet para Guru.
+- Tema preto e branco com superfícies translúcidas e backdrop blur.
+- Interface mais compacta e moderna.
+- Painel de participantes em glass drawer.
+- Dock de controles sempre visível.
+
+COMPARTILHAMENTO DE TELA
+- A apresentação nunca cresce além do viewport.
+- Desktop: apresentação principal + coluna lateral de participantes.
+- Tablet: apresentação + faixa horizontal de participantes.
+- Mobile: apresentação redimensionada + participantes compactos.
+- object-fit: contain para preservar a tela inteira sem corte.
+- Controles continuam visíveis enquanto alguém apresenta.
+- Fullscreen continua disponível.
+
+MICROFONE
+- Estado muted agora é enviado ao servidor.
+- Todos os participantes recebem atualização de mute em tempo real.
+- Badge "Mic off" nos cards.
+- Ícone de mute no painel de participantes.
+- Estado inicial de mute é sincronizado ao entrar/reconectar.
+
+DEPLOY
+- Mantém TURN/STUN e recuperação ICE existentes.
+- app.js, runtime-config.js e index.html configurados como no-cache no Netlify.

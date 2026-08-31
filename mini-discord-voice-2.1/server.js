@@ -60,8 +60,8 @@ app.use(express.static(PUBLIC_DIR));
 app.get("/health", (_req, res) => {
     res.status(200).json({
         ok: true,
-        service: "mini-discord-voice",
-        version: "3.0.0",
+        service: "guru-private-room",
+        version: "3.1.0",
         turnConfigured: Boolean(TURN_USERNAME && TURN_CREDENTIAL)
     });
 });
@@ -115,7 +115,7 @@ app.get("/:roomId", (req, res, next) => {
 });
 
 io.on("connection", (socket) => {
-    socket.on("join-room", ({ roomId, profile } = {}) => {
+    socket.on("join-room", ({ roomId, profile, muted } = {}) => {
         if (!isValidRoomId(roomId)) {
             socket.emit("room-error", {
                 message: "Invalid room link."
@@ -130,16 +130,19 @@ io.on("connection", (socket) => {
         const screenSharerId = getActiveScreenSharer(roomId);
         const safeProfile = sanitizeProfile(profile);
         const participantProfiles = getParticipantProfiles(existingParticipants);
+        const participantStates = getParticipantStates(existingParticipants);
 
         socket.join(roomId);
         socket.data.roomId = roomId;
         socket.data.profile = safeProfile;
+        socket.data.muted = Boolean(muted);
 
         socket.emit("room-joined", {
             roomId,
             participantId: socket.id,
             existingParticipants,
             participantProfiles,
+            participantStates,
             participantCount: existingParticipants.length + 1,
             screenSharerId
         });
@@ -147,7 +150,8 @@ io.on("connection", (socket) => {
         socket.to(roomId).emit("participant-joined", {
             participantId: socket.id,
             participantCount: existingParticipants.length + 1,
-            profile: safeProfile
+            profile: safeProfile,
+            muted: socket.data.muted
         });
 
         emitParticipantCount(roomId);
@@ -171,6 +175,21 @@ io.on("connection", (socket) => {
         });
 
         reply({ ok: true, profile: safeProfile });
+    });
+
+    socket.on("set-muted", ({ muted } = {}) => {
+        const roomId = socket.data.roomId;
+
+        if (!isSocketInRoom(socket, roomId)) {
+            return;
+        }
+
+        socket.data.muted = Boolean(muted);
+
+        socket.to(roomId).emit("participant-media-state", {
+            participantId: socket.id,
+            muted: socket.data.muted
+        });
     });
 
     socket.on("request-screen-share", (_payload, callback) => {
@@ -275,6 +294,19 @@ function getParticipantProfiles(participantIds) {
     }
 
     return profiles;
+}
+
+function getParticipantStates(participantIds) {
+    const states = {};
+
+    for (const participantId of participantIds) {
+        const participantSocket = io.sockets.sockets.get(participantId);
+        states[participantId] = {
+            muted: Boolean(participantSocket?.data?.muted)
+        };
+    }
+
+    return states;
 }
 
 function sanitizeProfile(profile) {
@@ -429,5 +461,5 @@ function emitParticipantCount(roomId) {
 }
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Mini Meet 3.0 listening on port ${PORT}`);
+    console.log(`Guru 3.1 listening on port ${PORT}`);
 });

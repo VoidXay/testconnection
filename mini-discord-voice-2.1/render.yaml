@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: mini-discord-voice
+    name: guru-private-room
     runtime: node
     plan: free
     buildCommand: npm install

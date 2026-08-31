@@ -94,6 +94,7 @@ const elements = {
 const peers = new Map();
 const audioContexts = new Set();
 const participantProfiles = new Map();
+const participantMediaStates = new Map();
 
 let roomId = resolveRoomId();
 let localProfile = loadStoredProfile();
@@ -461,15 +462,21 @@ function toggleMicrophone() {
     }
 
     updateMicrophoneUi();
+
+    if (roomActive && socket.connected) {
+        socket.emit("set-muted", { muted: isMuted });
+    }
 }
 
 function updateMicrophoneUi() {
     elements.micButton.classList.toggle("muted", isMuted);
+    elements.micButton.setAttribute("aria-pressed", String(isMuted));
     elements.micText.textContent = isMuted ? "Ativar mic" : "Microfone";
     elements.localStatus.textContent = isMuted
         ? "Microfone desligado"
         : "Microfone conectado";
-    elements.localSidebarStatus.textContent = isMuted ? "mudo" : "online";
+    elements.localSidebarStatus.textContent = isMuted ? "microfone desligado" : "online";
+    setParticipantMuted("self", isMuted);
 }
 
 function detectNoiseSuppressionSupport(track) {
@@ -990,7 +997,8 @@ function joinRoom() {
 
     socket.emit("join-room", {
         roomId,
-        profile: localProfile
+        profile: localProfile,
+        muted: isMuted
     });
 }
 
@@ -1052,7 +1060,8 @@ socket.on("room-joined", async ({
     existingParticipants,
     participantCount,
     screenSharerId,
-    participantProfiles: profilesById
+    participantProfiles: profilesById,
+    participantStates: statesById
 }) => {
     participantTotal = participantCount;
     updateParticipantCount();
@@ -1067,10 +1076,15 @@ socket.on("room-joined", async ({
 
     for (const participantId of existingParticipants) {
         const profile = sanitizeProfile(profilesById?.[participantId]);
+        const state = sanitizeParticipantState(statesById?.[participantId]);
         participantProfiles.set(participantId, profile);
+        participantMediaStates.set(participantId, state);
         ensureParticipantUi(participantId, profile);
+        setParticipantMuted(participantId, state.muted);
         await createPeerConnection(participantId, true);
     }
+
+    setParticipantMuted("self", isMuted);
 
     if (localScreenStream && activeScreenSharerId !== socket.id) {
         reclaimLocalScreenShare().catch((error) => {
@@ -1081,15 +1095,17 @@ socket.on("room-joined", async ({
     updateEmptyState();
 });
 
-socket.on("participant-joined", ({ participantId, participantCount, profile }) => {
+socket.on("participant-joined", ({ participantId, participantCount, profile, muted }) => {
     if (!participantId || participantId === socket.id) {
         return;
     }
 
     participantTotal = participantCount;
     participantProfiles.set(participantId, sanitizeProfile(profile));
+    participantMediaStates.set(participantId, { muted: Boolean(muted) });
     updateParticipantCount();
     ensureParticipantUi(participantId, profile);
+    setParticipantMuted(participantId, Boolean(muted));
     updateEmptyState();
     elements.roomDescription.textContent = `${participantTotal} pessoas conectadas na sala.`;
 });
@@ -1102,6 +1118,7 @@ socket.on("participant-left", ({ participantId }) => {
     removePeer(participantId);
     removeParticipantUi(participantId);
     participantProfiles.delete(participantId);
+    participantMediaStates.delete(participantId);
     updateEmptyState();
 });
 
@@ -1122,6 +1139,16 @@ socket.on("participant-profile-updated", ({ participantId, profile }) => {
 socket.on("participant-count", ({ participantCount }) => {
     participantTotal = Math.max(1, Number(participantCount) || 1);
     updateParticipantCount();
+});
+
+socket.on("participant-media-state", ({ participantId, muted }) => {
+    if (!participantId || participantId === socket.id) {
+        return;
+    }
+
+    const state = { muted: Boolean(muted) };
+    participantMediaStates.set(participantId, state);
+    setParticipantMuted(participantId, state.muted);
 });
 
 socket.on("screen-share-started", ({ participantId }) => {
@@ -1477,6 +1504,12 @@ function ensureParticipantUi(participantId, suppliedProfile) {
             <span class="voice-dot large" aria-label="Falando"></span>
         </div>
         <span class="participant-status" data-role="status">conectando...</span>
+        <span class="mute-badge" data-role="mute-badge" aria-label="Microfone desligado" title="Microfone desligado">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M9 9v2a3 3 0 005.12 2.12M15 9V6a3 3 0 00-5.12-2.12M5 10v1a7 7 0 0011.2 5.6M19 10v1a7 7 0 01-.42 2.38M12 18v3M9 21h6M3 3l18 18"/>
+            </svg>
+            <span>Mic off</span>
+        </span>
     `;
     elements.participantGrid.appendChild(card);
 
@@ -1497,9 +1530,17 @@ function ensureParticipantUi(participantId, suppliedProfile) {
                 <path d="M9 21h6M12 17v4"/>
             </svg>
         </span>
+        <span class="mini-mute-badge" data-role="mute-badge" aria-label="Microfone desligado" title="Microfone desligado">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 9v2a3 3 0 005.12 2.12M15 9V6a3 3 0 00-5.12-2.12M5 10v1a7 7 0 0011.2 5.6M19 10v1a7 7 0 01-.42 2.38M3 3l18 18"/></svg>
+        </span>
         <span class="voice-dot" aria-label="Falando"></span>
     `;
     elements.peopleList.appendChild(person);
+
+    const participantState = sanitizeParticipantState(
+        participantMediaStates.get(participantId)
+    );
+    setParticipantMuted(participantId, participantState.muted);
 
     if (activeScreenSharerId === participantId) {
         setActiveScreenSharer(participantId);
@@ -1565,8 +1606,43 @@ function setParticipantStatus(participantId, text) {
     );
     const sidebarStatus = personRow?.querySelector('[data-role="sidebar-status"]');
     if (sidebarStatus) {
-        sidebarStatus.textContent = text.includes("conect") ? "online" : text;
+        const state = sanitizeParticipantState(
+            participantMediaStates.get(participantId)
+        );
+        sidebarStatus.textContent = state.muted
+            ? "microfone desligado"
+            : (text.includes("conect") ? "online" : text);
     }
+}
+
+function setParticipantMuted(participantId, muted) {
+    const isParticipantMuted = Boolean(muted);
+
+    selectParticipantElements(participantId).forEach((element) => {
+        element.classList.toggle("muted", isParticipantMuted);
+    });
+
+    if (participantId !== "self") {
+        const personRow = elements.peopleList.querySelector(
+            `[data-participant-id="${cssEscape(participantId)}"]`
+        );
+        const sidebarStatus = personRow?.querySelector('[data-role="sidebar-status"]');
+        if (sidebarStatus) {
+            sidebarStatus.textContent = isParticipantMuted
+                ? "microfone desligado"
+                : "online";
+        }
+    }
+
+    if (isParticipantMuted) {
+        setParticipantSpeaking(participantId, false);
+    }
+}
+
+function sanitizeParticipantState(value) {
+    return {
+        muted: Boolean(value?.muted)
+    };
 }
 
 function setParticipantSpeaking(participantId, speaking) {
@@ -1729,6 +1805,7 @@ function cleanup() {
     }
 
     setParticipantSpeaking("self", false);
+    participantMediaStates.clear();
     participantTotal = 1;
     updateParticipantCount();
     updateEmptyState();
