@@ -22,12 +22,12 @@ let rtcConfiguration = {
     iceTransportPolicy: "all"
 };
 
-const SCREEN_SHARE_MAX_BITRATE = 900_000;
-const SCREEN_SHARE_MEDIUM_BITRATE = 650_000;
-const SCREEN_SHARE_LOW_BITRATE = 450_000;
-const SCREEN_SHARE_MAX_FRAME_RATE = 15;
-const SCREEN_SHARE_TARGET_WIDTH = 1280;
-const SCREEN_SHARE_TARGET_HEIGHT = 720;
+const SCREEN_SHARE_MAX_BITRATE = 1_800_000;
+const SCREEN_SHARE_MEDIUM_BITRATE = 1_200_000;
+const SCREEN_SHARE_LOW_BITRATE = 800_000;
+const SCREEN_SHARE_MAX_FRAME_RATE = 30;
+const SCREEN_SHARE_TARGET_WIDTH = 1920;
+const SCREEN_SHARE_TARGET_HEIGHT = 1080;
 const AUDIO_MAX_BITRATE = 64_000;
 const SCREEN_SHARE_REQUEST_TIMEOUT = 7000;
 const PROFILE_STORAGE_KEY = "mini-meet-profile-v1";
@@ -594,8 +594,10 @@ async function toggleScreenShare() {
     try {
         capturedStream = await navigator.mediaDevices.getDisplayMedia({
             video: {
+                width: { ideal: SCREEN_SHARE_TARGET_WIDTH, max: SCREEN_SHARE_TARGET_WIDTH },
+                height: { ideal: SCREEN_SHARE_TARGET_HEIGHT, max: SCREEN_SHARE_TARGET_HEIGHT },
                 frameRate: {
-                    ideal: 12,
+                    ideal: 24,
                     max: SCREEN_SHARE_MAX_FRAME_RATE
                 }
             },
@@ -794,12 +796,12 @@ async function configureScreenSender(sender, screenTrack) {
             encoding.scaleResolutionDownBy = getScreenScaleResolutionDownBy(screenTrack);
 
             if ("priority" in encoding) {
-                encoding.priority = "low";
+                encoding.priority = "high";
             }
         }
 
         if ("degradationPreference" in parameters) {
-            parameters.degradationPreference = "balanced";
+            parameters.degradationPreference = "maintain-resolution";
         }
 
         await sender.setParameters(parameters);
