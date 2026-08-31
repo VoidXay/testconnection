@@ -43,3 +43,18 @@ CLIENT_ORIGIN=https://seu-site.netlify.app
 IMPORTANTE
 - O audio e WebRTC P2P; o Render faz sinalizacao, nao transmite o audio.
 - Para algumas redes muito restritas pode ser necessario adicionar TURN.
+
+TURN / METERED
+===============
+No Render > Environment, adicione:
+
+TURN_USERNAME=<seu username Metered>
+TURN_CREDENTIAL=<sua credential Metered>
+TURN_URLS=turn:global.relay.metered.ca:80,turn:global.relay.metered.ca:80?transport=tcp,turn:global.relay.metered.ca:443,turns:global.relay.metered.ca:443?transport=tcp
+
+Depois faça Manual Deploy > Deploy latest commit.
+
+Teste:
+https://SEU-SERVICO.onrender.com/health
+
+Deve retornar turnConfigured: true.

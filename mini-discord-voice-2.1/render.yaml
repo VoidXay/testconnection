@@ -12,3 +12,10 @@ services:
         value: "20"
       - key: CLIENT_ORIGIN
         value: "*"
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+      - key: TURN_URLS
+        sync: false
+

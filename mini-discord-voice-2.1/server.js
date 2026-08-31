@@ -6,6 +6,9 @@ const { Server } = require("socket.io");
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const allowedOrigins = parseAllowedOrigins(process.env.CLIENT_ORIGIN || "*");
+const TURN_USERNAME = String(process.env.TURN_USERNAME || "").trim();
+const TURN_CREDENTIAL = String(process.env.TURN_CREDENTIAL || "").trim();
+const TURN_URLS = parseTurnUrls(process.env.TURN_URLS);
 
 const app = express();
 const server = http.createServer(app);
@@ -29,12 +32,72 @@ const io = new Server(server, {
 });
 
 app.disable("x-powered-by");
+
+app.use((req, res, next) => {
+    const origin = String(req.headers.origin || "").replace(/\/$/, "");
+
+    if (origin && (allowedOrigins.has("*") || allowedOrigins.has(origin))) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Vary", "Origin");
+    }
+
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") {
+        res.sendStatus(204);
+        return;
+    }
+
+    next();
+});
+
 app.use(express.static(PUBLIC_DIR));
 
 app.get("/health", (_req, res) => {
     res.status(200).json({
         ok: true,
-        service: "mini-discord-voice"
+        service: "mini-discord-voice",
+        turnConfigured: Boolean(TURN_USERNAME && TURN_CREDENTIAL)
+    });
+});
+
+app.get("/ice-config", (req, res) => {
+    const origin = String(req.headers.origin || "").replace(/\/$/, "");
+
+    if (
+        origin &&
+        !allowedOrigins.has("*") &&
+        !allowedOrigins.has(origin)
+    ) {
+        res.status(403).json({ error: "Origin not allowed." });
+        return;
+    }
+
+    const iceServers = [
+        {
+            urls: [
+                "stun:stun.relay.metered.ca:80",
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302"
+            ]
+        }
+    ];
+
+    if (TURN_USERNAME && TURN_CREDENTIAL) {
+        for (const url of TURN_URLS) {
+            iceServers.push({
+                urls: url,
+                username: TURN_USERNAME,
+                credential: TURN_CREDENTIAL
+            });
+        }
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).json({
+        iceServers,
+        turnConfigured: Boolean(TURN_USERNAME && TURN_CREDENTIAL)
     });
 });
 
@@ -144,6 +207,24 @@ function parseAllowedOrigins(value) {
             .map((origin) => origin.trim().replace(/\/$/, ""))
             .filter(Boolean)
     );
+}
+
+function parseTurnUrls(value) {
+    const configuredUrls = String(value || "")
+        .split(",")
+        .map((url) => url.trim())
+        .filter(Boolean);
+
+    if (configuredUrls.length > 0) {
+        return configuredUrls;
+    }
+
+    return [
+        "turn:global.relay.metered.ca:80",
+        "turn:global.relay.metered.ca:80?transport=tcp",
+        "turn:global.relay.metered.ca:443",
+        "turns:global.relay.metered.ca:443?transport=tcp"
+    ];
 }
 
 function isValidRoomId(roomId) {

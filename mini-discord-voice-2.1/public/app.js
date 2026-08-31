@@ -8,15 +8,18 @@ const socket = io(socketServerUrl || undefined, {
     timeout: 12000
 });
 
-const rtcConfiguration = {
+let rtcConfiguration = {
     iceServers: [
         {
             urls: [
+                "stun:stun.relay.metered.ca:80",
                 "stun:stun.l.google.com:19302",
                 "stun:stun1.l.google.com:19302"
             ]
         }
-    ]
+    ],
+    iceCandidatePoolSize: 10,
+    iceTransportPolicy: "all"
 };
 
 const elements = {
@@ -74,6 +77,7 @@ async function start() {
         );
     }
 
+    await loadIceConfiguration();
     setConnectionStatus("Microfone", "waiting");
 
     localStream = await navigator.mediaDevices.getUserMedia({
@@ -113,6 +117,39 @@ async function start() {
         joinRoom();
     } else {
         setConnectionStatus("Conectando", "waiting");
+    }
+}
+
+async function loadIceConfiguration() {
+    if (!socketServerUrl) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${socketServerUrl}/ice-config`, {
+            method: "GET",
+            mode: "cors",
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            throw new Error(`ICE config request failed with ${response.status}.`);
+        }
+
+        const payload = await response.json();
+
+        if (Array.isArray(payload.iceServers) && payload.iceServers.length > 0) {
+            rtcConfiguration = {
+                ...rtcConfiguration,
+                iceServers: payload.iceServers
+            };
+        }
+
+        if (!payload.turnConfigured) {
+            console.warn("TURN is not configured on the Render service.");
+        }
+    } catch (error) {
+        console.error("Could not load TURN configuration; using STUN only:", error);
     }
 }
 
@@ -469,7 +506,11 @@ async function createPeerConnection(participantId, shouldCreateOffer) {
         connection,
         pendingIceCandidates: [],
         audioElement: createRemoteAudioElement(participantId),
-        audioMonitor: null
+        audioMonitor: null,
+        initiator: shouldCreateOffer,
+        restartAttempts: 0,
+        restartInProgress: false,
+        disconnectedTimer: null
     };
 
     peers.set(participantId, peer);
@@ -486,6 +527,15 @@ async function createPeerConnection(participantId, shouldCreateOffer) {
         socket.emit("webrtc-ice-candidate", {
             targetId: participantId,
             candidate
+        });
+    });
+
+    connection.addEventListener("icecandidateerror", (event) => {
+        console.warn("ICE candidate error:", {
+            participantId,
+            errorCode: event.errorCode,
+            errorText: event.errorText,
+            url: event.url
         });
     });
 
@@ -509,31 +559,91 @@ async function createPeerConnection(participantId, shouldCreateOffer) {
         const state = connection.connectionState;
 
         if (state === "connected") {
+            clearTimeout(peer.disconnectedTimer);
+            peer.disconnectedTimer = null;
+            peer.restartAttempts = 0;
+            peer.restartInProgress = false;
             setParticipantStatus(participantId, "áudio conectado");
             getParticipantCard(participantId)?.classList.add("connected");
         } else if (state === "connecting") {
             setParticipantStatus(participantId, "conectando...");
         } else if (state === "disconnected") {
             setParticipantStatus(participantId, "reconectando...");
+            clearTimeout(peer.disconnectedTimer);
+
+            peer.disconnectedTimer = setTimeout(() => {
+                if (
+                    peer.initiator &&
+                    connection.connectionState === "disconnected"
+                ) {
+                    attemptIceRestart(participantId, peer);
+                }
+            }, 2500);
         } else if (state === "failed") {
-            setParticipantStatus(participantId, "falha na conexão");
             setParticipantSpeaking(participantId, false);
+
+            if (peer.initiator && peer.restartAttempts < 2) {
+                attemptIceRestart(participantId, peer);
+            } else if (!peer.restartInProgress) {
+                setParticipantStatus(participantId, "falha na conexão");
+            }
         } else if (state === "closed") {
+            clearTimeout(peer.disconnectedTimer);
             setParticipantSpeaking(participantId, false);
         }
     });
 
     if (shouldCreateOffer) {
-        const offer = await connection.createOffer();
-        await connection.setLocalDescription(offer);
-
-        socket.emit("webrtc-offer", {
-            targetId: participantId,
-            offer: connection.localDescription
-        });
+        await createAndSendOffer(participantId, peer, false);
     }
 
     return peer;
+}
+
+async function createAndSendOffer(participantId, peer, iceRestart) {
+    const connection = peer.connection;
+
+    if (connection.signalingState === "closed") {
+        return;
+    }
+
+    const offer = await connection.createOffer({ iceRestart });
+    await connection.setLocalDescription(offer);
+
+    socket.emit("webrtc-offer", {
+        targetId: participantId,
+        offer: connection.localDescription
+    });
+}
+
+async function attemptIceRestart(participantId, peer) {
+    if (
+        peer.restartInProgress ||
+        !peer.initiator ||
+        peer.connection.signalingState === "closed"
+    ) {
+        return;
+    }
+
+    peer.restartInProgress = true;
+    peer.restartAttempts += 1;
+    setParticipantStatus(participantId, "recuperando conexão...");
+
+    try {
+        if (typeof peer.connection.restartIce === "function") {
+            peer.connection.restartIce();
+        }
+
+        await createAndSendOffer(participantId, peer, true);
+    } catch (error) {
+        console.error("ICE restart failed:", error);
+
+        if (peer.restartAttempts >= 2) {
+            setParticipantStatus(participantId, "falha na conexão");
+        }
+    } finally {
+        peer.restartInProgress = false;
+    }
 }
 
 function createRemoteAudioElement(participantId) {
@@ -605,6 +715,7 @@ function removePeer(participantId) {
         return;
     }
 
+    clearTimeout(peer.disconnectedTimer);
     peer.audioMonitor?.stop();
     peer.connection.close();
     peer.audioElement.remove();
