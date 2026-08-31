@@ -61,7 +61,7 @@ app.get("/health", (_req, res) => {
     res.status(200).json({
         ok: true,
         service: "guru-private-room",
-        version: "3.1.0",
+        version: "3.2.0",
         turnConfigured: Boolean(TURN_USERNAME && TURN_CREDENTIAL)
     });
 });
@@ -461,5 +461,5 @@ function emitParticipantCount(roomId) {
 }
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Guru 3.1 listening on port ${PORT}`);
+    console.log(`Guru 3.2 listening on port ${PORT}`);
 });

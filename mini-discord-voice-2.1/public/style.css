@@ -446,79 +446,159 @@ svg {
 .empty-state span { margin-top: 3px; color: var(--muted-2); font-size: 11px; }
 .empty-state button { padding: 9px 12px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.06); cursor: pointer; font-size: 11px; font-weight: 700; }
 
-/* Screen presentation: constrained to viewport, never pushes controls away */
+/* Presentation mode: presentation owns the stage and participant cards float above it. */
 .content.screen-active {
-    grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
-    grid-template-rows: auto minmax(0, 1fr);
+    position: relative;
+    display: block;
+    min-height: 0;
+    padding: 10px 12px 10px;
+    overflow: hidden;
 }
-.content.screen-active .meeting-heading { grid-column: 1 / -1; }
-.content.screen-active .empty-state { display: none !important; }
+.content.screen-active .meeting-heading,
+.content.screen-active .empty-state {
+    display: none !important;
+}
 .screen-share-stage {
+    --screen-aspect-ratio: 16 / 9;
     display: flex;
+    width: 100%;
+    height: 100%;
     min-width: 0;
     min-height: 0;
-    height: 100%;
     flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
-    background: #080809;
+    background: #030303;
     box-shadow: inset 0 1px rgba(255,255,255,.025);
 }
-.content.screen-active .screen-share-stage { grid-column: 1; grid-row: 2; }
+.content.screen-active .screen-share-stage {
+    width: 100%;
+    height: 100%;
+}
 .content.screen-active .participant-grid {
-    grid-column: 2;
-    grid-row: 2;
+    position: absolute;
+    top: 70px;
+    right: 24px;
+    bottom: 24px;
+    z-index: 8;
     display: flex;
+    width: 168px;
+    min-width: 0;
     min-height: 0;
     flex-direction: column;
-    gap: 9px;
-    overflow-y: auto;
+    gap: 8px;
+    padding: 0;
     overflow-x: hidden;
+    overflow-y: auto;
+    pointer-events: auto;
+    scrollbar-width: thin;
 }
-.content.screen-active .participant-card { min-height: 132px; flex: 0 0 132px; border-radius: 17px; }
-.content.screen-active .participant-avatar-shell { width: 62px; height: 62px; }
-.content.screen-active .participant-avatar { font-size: 17px; }
+.content.screen-active .participant-card {
+    min-width: 0;
+    min-height: 104px;
+    flex: 0 0 104px;
+    border-radius: 15px;
+    background: rgba(14,14,15,.82);
+    box-shadow: 0 12px 32px rgba(0,0,0,.28);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+.content.screen-active .participant-avatar-shell { width: 48px; height: 48px; }
+.content.screen-active .participant-avatar { font-size: 13px; }
 .content.screen-active .participant-status { display: none; }
-.content.screen-active .participant-card-footer { right: 10px; bottom: 9px; left: 10px; }
-.content.screen-active .participant-name-line strong { font-size: 10px; }
+.content.screen-active .participant-card-footer { right: 8px; bottom: 7px; left: 8px; }
+.content.screen-active .participant-name-line strong { font-size: 9px; }
+.content.screen-active .you-badge { display: none; }
+.content.screen-active .screen-card-badge,
+.content.screen-active .mute-badge {
+    top: 7px;
+    right: 7px;
+    min-height: 22px;
+    padding: 0 6px;
+    font-size: 7px;
+}
+.content.screen-active .muted.screen-sharing .mute-badge { top: 33px; }
+
 .screen-share-header {
     display: flex;
-    min-height: 50px;
-    padding: 9px 11px 9px 14px;
+    min-height: 46px;
+    padding: 7px 9px 7px 13px;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     border-bottom: 1px solid var(--line);
-    background: rgba(255,255,255,.025);
+    background: rgba(10,10,10,.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
-.screen-share-header span, .screen-share-header strong { display: block; }
-.screen-share-header strong { margin-top: 2px; max-width: min(70vw, 680px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
-.screen-share-kicker { color: var(--muted-2); font-size: 8px; }
-.screen-icon-button { width: 33px; height: 33px; flex: 0 0 auto; }
+.screen-share-header span,
+.screen-share-header strong { display: block; }
+.screen-share-header strong {
+    margin-top: 2px;
+    max-width: min(70vw, 680px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+}
+.screen-share-kicker { color: var(--muted-2); font-size: 7px; }
+.screen-icon-button { width: 31px; height: 31px; flex: 0 0 auto; }
+
 .screen-video-frame {
     position: relative;
     display: grid;
+    width: 100%;
     min-width: 0;
     min-height: 0;
-    flex: 1;
+    flex: 1 1 auto;
     overflow: hidden;
     place-items: center;
-    background: #050505;
+    background: #020202;
 }
 .screen-video-frame video {
     display: block;
-    width: 100%;
-    height: 100%;
+    width: auto;
+    height: auto;
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    background: #050505;
+    object-position: center center;
+    background: #020202;
 }
-.screen-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted-2); font-size: 11px; }
+.screen-placeholder {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--muted-2);
+    font-size: 11px;
+}
 .screen-placeholder.hidden { display: none; }
-.screen-share-stage:fullscreen { width: 100vw; height: 100vh; border: 0; border-radius: 0; background: #000; }
-.screen-share-stage:fullscreen .screen-video-frame { height: calc(100vh - 52px); }
+
+.screen-share-stage:fullscreen {
+    width: 100vw;
+    height: 100vh;
+    border: 0;
+    border-radius: 0;
+    background: #000;
+}
+.screen-share-stage:fullscreen .screen-video-frame {
+    width: 100vw;
+    height: calc(100vh - 46px);
+}
+.screen-share-stage:fullscreen .screen-video-frame video {
+    max-width: 100vw;
+    max-height: calc(100vh - 46px);
+}
+
+/* Reduce expensive glass effects while encoding/decoding a presentation. */
+.presentation-mode .topbar,
+.presentation-mode .control-dock,
+.presentation-mode .people-panel {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
 
 /* People drawer */
 .people-panel {
@@ -646,23 +726,25 @@ svg {
     .prejoin-shell { grid-template-columns: 1fr; width: min(680px, 100%); gap: 34px; }
     .prejoin-copy { margin-top: 56px; }
     .profile-card { width: 100%; }
-    .content.screen-active {
-        grid-template-columns: minmax(0,1fr);
-        grid-template-rows: auto minmax(0,1fr) 118px;
-    }
-    .content.screen-active .meeting-heading { grid-column: 1; grid-row: 1; }
-    .content.screen-active .screen-share-stage { grid-column: 1; grid-row: 2; }
+    .content.screen-active { padding: 8px; }
     .content.screen-active .participant-grid {
-        grid-column: 1;
-        grid-row: 3;
-        display: flex;
+        top: auto;
+        right: 18px;
+        bottom: 18px;
+        left: 18px;
+        width: auto;
+        height: 88px;
         flex-direction: row;
         overflow-x: auto;
         overflow-y: hidden;
     }
-    .content.screen-active .participant-card { min-width: 150px; min-height: 108px; flex: 0 0 150px; }
-    .content.screen-active .participant-avatar-shell { width: 52px; height: 52px; }
-    .content.screen-active .participant-card-footer { bottom: 7px; }
+    .content.screen-active .participant-card {
+        min-width: 122px;
+        min-height: 82px;
+        flex: 0 0 122px;
+    }
+    .content.screen-active .participant-avatar-shell { width: 38px; height: 38px; }
+    .content.screen-active .participant-card-footer { bottom: 6px; }
 }
 
 @media (max-width: 720px) {
@@ -686,13 +768,25 @@ svg {
     .participant-card { min-height: 150px; border-radius: 18px; }
     .participant-avatar-shell { width: 82px; height: 82px; }
     .participant-avatar { font-size: 22px; }
-    .content.screen-active { grid-template-rows: auto minmax(0,1fr) 96px; }
-    .content.screen-active .participant-card { min-width: 124px; min-height: 88px; flex-basis: 124px; }
-    .content.screen-active .participant-avatar-shell { width: 42px; height: 42px; }
-    .content.screen-active .participant-avatar { font-size: 13px; }
-    .screen-share-header { min-height: 43px; padding: 7px 8px 7px 11px; }
-    .screen-share-header strong { font-size: 10px; }
-    .screen-share-stage { border-radius: 16px; }
+    .content.screen-active { padding: 6px; }
+    .content.screen-active .participant-grid {
+        right: 10px;
+        bottom: 10px;
+        left: 10px;
+        height: 74px;
+        gap: 6px;
+    }
+    .content.screen-active .participant-card {
+        min-width: 104px;
+        min-height: 68px;
+        flex-basis: 104px;
+    }
+    .content.screen-active .participant-avatar-shell { width: 31px; height: 31px; }
+    .content.screen-active .participant-avatar { font-size: 10px; }
+    .content.screen-active .participant-card-footer { bottom: 4px; }
+    .screen-share-header { min-height: 39px; padding: 5px 6px 5px 9px; }
+    .screen-share-header strong { font-size: 9px; }
+    .screen-share-stage { border-radius: 13px; }
     .controls { padding: 7px 8px 9px; grid-template-columns: 1fr; }
     .meeting-info-mini, .footer-spacer { display: none; }
     .control-dock { width: fit-content; max-width: 100%; min-height: 54px; margin: 0 auto; padding: 5px; border-radius: 17px; }

@@ -1,0 +1,19 @@
+GURU 3.2 - PRESENTATION / LATENCY FIX
+
+1. Screen sharing no longer requests 1080p30.
+2. Sender output is limited to 15 FPS and scaled to ~1280x720.
+3. Video bitrate is capped dynamically:
+   - 1 remote peer: 900 Kbps
+   - 2-3 remote peers: 650 Kbps per peer
+   - 4+ remote peers: 450 Kbps per peer
+4. Audio sender is marked high priority and capped at 64 Kbps.
+5. Screen video is low priority and uses balanced degradation.
+6. Current Guru tab is excluded from Chromium share picker when supported.
+7. Presentation fills the available meeting area.
+8. Participant cards float over the presentation instead of shrinking it.
+9. Video element uses intrinsic dimensions + max bounds so the full source is visible.
+10. Blur cost is reduced while presentation mode is active.
+
+IMPORTANT:
+Avoid sharing the browser window that is displaying Guru itself. Doing that creates
+an infinite mirror effect and can consume substantial GPU/encoder/network resources.

@@ -22,7 +22,13 @@ let rtcConfiguration = {
     iceTransportPolicy: "all"
 };
 
-const SCREEN_SHARE_BITRATE = 2_500_000;
+const SCREEN_SHARE_MAX_BITRATE = 900_000;
+const SCREEN_SHARE_MEDIUM_BITRATE = 650_000;
+const SCREEN_SHARE_LOW_BITRATE = 450_000;
+const SCREEN_SHARE_MAX_FRAME_RATE = 15;
+const SCREEN_SHARE_TARGET_WIDTH = 1280;
+const SCREEN_SHARE_TARGET_HEIGHT = 720;
+const AUDIO_MAX_BITRATE = 64_000;
 const SCREEN_SHARE_REQUEST_TIMEOUT = 7000;
 const PROFILE_STORAGE_KEY = "mini-meet-profile-v1";
 const MAX_AVATAR_FILE_SIZE = 6 * 1024 * 1024;
@@ -183,6 +189,10 @@ async function enterRoomFromLobby() {
         const localTrack = localStream.getAudioTracks()[0];
         if (!localTrack) {
             throw new Error("No audio track was returned by the browser.");
+        }
+
+        if ("contentHint" in localTrack) {
+            localTrack.contentHint = "speech";
         }
 
         noiseSuppressionSupported = detectNoiseSuppressionSupport(localTrack);
@@ -584,11 +594,16 @@ async function toggleScreenShare() {
     try {
         capturedStream = await navigator.mediaDevices.getDisplayMedia({
             video: {
-                width: { ideal: 1920, max: 1920 },
-                height: { ideal: 1080, max: 1080 },
-                frameRate: { ideal: 30, max: 30 }
+                frameRate: {
+                    ideal: 12,
+                    max: SCREEN_SHARE_MAX_FRAME_RATE
+                }
             },
-            audio: false
+            audio: false,
+            selfBrowserSurface: "exclude",
+            surfaceSwitching: "include",
+            systemAudio: "exclude",
+            preferCurrentTab: false
         });
 
         const screenTrack = capturedStream.getVideoTracks()[0];
@@ -599,6 +614,13 @@ async function toggleScreenShare() {
 
         if ("contentHint" in screenTrack) {
             screenTrack.contentHint = "detail";
+        }
+
+        const captureSettings = screenTrack.getSettings?.() || {};
+        if (captureSettings.displaySurface === "browser") {
+            showToast(
+                "Dica: evite compartilhar a própria aba do Guru para não criar efeito espelho e lag."
+            );
         }
 
         const grant = await requestScreenShareSlot();
@@ -755,25 +777,101 @@ async function attachScreenTrackToPeer(peer, screenTrack) {
     }
 
     await peer.screenSender.replaceTrack(screenTrack);
-    await configureScreenSender(peer.screenSender);
+    await configureScreenSender(peer.screenSender, screenTrack);
 }
 
-async function configureScreenSender(sender) {
+async function configureScreenSender(sender, screenTrack) {
     try {
         const parameters = sender.getParameters();
+        const encodings = Array.isArray(parameters.encodings)
+            ? parameters.encodings
+            : [];
 
-        if (Array.isArray(parameters.encodings) && parameters.encodings.length > 0) {
-            parameters.encodings[0].maxBitrate = SCREEN_SHARE_BITRATE;
+        if (encodings.length > 0) {
+            const encoding = encodings[0];
+            encoding.maxBitrate = getScreenBitrateBudget();
+            encoding.maxFramerate = SCREEN_SHARE_MAX_FRAME_RATE;
+            encoding.scaleResolutionDownBy = getScreenScaleResolutionDownBy(screenTrack);
+
+            if ("priority" in encoding) {
+                encoding.priority = "low";
+            }
         }
 
         if ("degradationPreference" in parameters) {
-            parameters.degradationPreference = "maintain-resolution";
+            parameters.degradationPreference = "balanced";
         }
 
         await sender.setParameters(parameters);
     } catch (error) {
         console.warn("Could not apply screen bitrate parameters:", error);
     }
+}
+
+function getScreenBitrateBudget() {
+    const remotePeerCount = Math.max(1, peers.size);
+
+    if (remotePeerCount >= 4) {
+        return SCREEN_SHARE_LOW_BITRATE;
+    }
+
+    if (remotePeerCount >= 2) {
+        return SCREEN_SHARE_MEDIUM_BITRATE;
+    }
+
+    return SCREEN_SHARE_MAX_BITRATE;
+}
+
+function getScreenScaleResolutionDownBy(screenTrack) {
+    const settings = screenTrack?.getSettings?.() || {};
+    const width = Number(settings.width) || SCREEN_SHARE_TARGET_WIDTH;
+    const height = Number(settings.height) || SCREEN_SHARE_TARGET_HEIGHT;
+
+    return Math.max(
+        1,
+        width / SCREEN_SHARE_TARGET_WIDTH,
+        height / SCREEN_SHARE_TARGET_HEIGHT
+    );
+}
+
+async function configureAudioSender(sender) {
+    try {
+        const parameters = sender.getParameters();
+        const encodings = Array.isArray(parameters.encodings)
+            ? parameters.encodings
+            : [];
+
+        if (encodings.length > 0) {
+            const encoding = encodings[0];
+            encoding.maxBitrate = AUDIO_MAX_BITRATE;
+
+            if ("priority" in encoding) {
+                encoding.priority = "high";
+            }
+        }
+
+        await sender.setParameters(parameters);
+    } catch (error) {
+        console.warn("Could not apply audio sender priority:", error);
+    }
+}
+
+async function refreshLocalScreenSenderBudgets() {
+    const screenTrack = getLocalScreenTrack();
+
+    if (!screenTrack) {
+        return;
+    }
+
+    const updates = [];
+
+    for (const peer of peers.values()) {
+        if (peer.screenSender && peer.connection.signalingState !== "closed") {
+            updates.push(configureScreenSender(peer.screenSender, screenTrack));
+        }
+    }
+
+    await Promise.allSettled(updates);
 }
 
 async function detachScreenTrackFromAllPeers() {
@@ -845,6 +943,7 @@ function waitForStableSignalingState(connection, timeoutMs = 5000) {
 
 function setActiveScreenSharer(participantId) {
     activeScreenSharerId = participantId || null;
+    document.body.classList.toggle("presentation-mode", Boolean(activeScreenSharerId));
 
     document.querySelectorAll("[data-participant-id]").forEach((element) => {
         element.classList.remove("screen-sharing");
@@ -912,6 +1011,27 @@ function showScreenStream(stream, muted) {
 
     elements.screenVideo.muted = Boolean(muted);
     elements.screenPlaceholder.classList.add("hidden");
+
+    const updateAspectRatio = () => {
+        const width = elements.screenVideo.videoWidth;
+        const height = elements.screenVideo.videoHeight;
+
+        if (width > 0 && height > 0) {
+            elements.screenShareStage.style.setProperty(
+                "--screen-aspect-ratio",
+                `${width} / ${height}`
+            );
+        }
+    };
+
+    if (elements.screenVideo.readyState >= 1) {
+        updateAspectRatio();
+    } else {
+        elements.screenVideo.addEventListener("loadedmetadata", updateAspectRatio, {
+            once: true
+        });
+    }
+
     elements.screenVideo.play().catch(() => {});
 }
 
@@ -929,6 +1049,7 @@ function clearScreenVideo() {
     elements.screenVideo.pause();
     elements.screenVideo.srcObject = null;
     elements.screenVideo.muted = false;
+    elements.screenShareStage.style.removeProperty("--screen-aspect-ratio");
     elements.screenPlaceholder.classList.remove("hidden");
 }
 
@@ -1253,7 +1374,8 @@ async function createPeerConnection(participantId, shouldCreateOffer) {
     const connection = new RTCPeerConnection(rtcConfiguration);
 
     for (const track of localStream.getAudioTracks()) {
-        connection.addTrack(track, localStream);
+        const audioSender = connection.addTrack(track, localStream);
+        configureAudioSender(audioSender);
     }
 
     const screenTransceiver = connection.addTransceiver("video", {
@@ -1281,6 +1403,7 @@ async function createPeerConnection(participantId, shouldCreateOffer) {
 
     if (screenTrack) {
         await attachScreenTrackToPeer(peer, screenTrack);
+        refreshLocalScreenSenderBudgets();
     }
 
     connection.addEventListener("icecandidate", ({ candidate }) => {
@@ -1574,6 +1697,10 @@ function removePeer(participantId) {
     peer.audioElement.remove();
     peers.delete(participantId);
     setParticipantSpeaking(participantId, false);
+
+    if (getLocalScreenTrack()) {
+        refreshLocalScreenSenderBudgets();
+    }
 }
 
 function getParticipantCard(participantId) {

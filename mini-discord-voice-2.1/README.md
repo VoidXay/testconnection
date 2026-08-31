@@ -1,26 +1,19 @@
-# Guru 3.1
+# Guru 3.2
 
-Sala privada de voz com WebRTC, perfis, compartilhamento de tela e TURN.
+Private voice rooms with profile, low-latency audio and screen sharing.
+
+## 3.2 fixes
+
+- Presentation uses the full meeting stage instead of consuming only part of the viewport.
+- Remote participant cards float over the presentation and stay compact.
+- Shared video is always fitted without cropping.
+- Screen capture is capped to 15 FPS and approximately 720p at the sender.
+- Screen bitrate is adaptive to participant count (900 / 650 / 450 Kbps per peer).
+- Audio sender is explicitly high priority while screen video is low priority.
+- Current Guru tab is excluded from the Chromium share picker when supported to avoid recursive screen capture.
+- Heavy blur is reduced while a presentation is active.
+- Existing TURN, ICE recovery, profile and mute synchronization are preserved.
 
 ## Deploy
 
-### Render
-- Root Directory: `mini-discord-voice-2.1`
-- Build Command: `npm install`
-- Start Command: `npm start`
-- Variáveis: `TURN_USERNAME`, `TURN_CREDENTIAL`, `TURN_URLS`, `CLIENT_ORIGIN`
-
-### Netlify
-- Base Directory: `mini-discord-voice-2.1`
-- Build Command: `npm run build:netlify`
-- Publish Directory: `public`
-- Variável: `SOCKET_SERVER_URL=https://seu-servico.onrender.com`
-
-## 3.1
-- Rebrand para Guru.
-- Interface dark/preto e branco com blur.
-- Layout de apresentação limitado ao viewport e responsivo.
-- Controles sempre visíveis durante compartilhamento.
-- Estado de microfone mutado sincronizado entre participantes.
-- Indicadores de mute no card e painel de participantes.
-- Layouts específicos para desktop, tablet e mobile.
+Use the same Render and Netlify settings/environment variables from Guru 3.1.
