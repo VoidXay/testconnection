@@ -1,0 +1,45 @@
+MINI DISCORD VOICE 2.1 - DEPLOY RAPIDO
+
+1) GITHUB
+- Envie TODOS os arquivos desta pasta para um repositorio.
+
+2) RENDER - BACKEND
+- New -> Web Service
+- Conecte o repositorio
+- Runtime: Node
+- Build Command: npm install
+- Start Command: npm start
+- Deploy
+
+O projeto ja possui render.yaml e endpoint /health.
+Copie a URL final, exemplo:
+https://mini-discord-voice.onrender.com
+
+3) NETLIFY - FRONTEND
+- Add new project -> Import existing project
+- Use o mesmo repositorio
+- O netlify.toml ja define:
+  Build: npm run build:netlify
+  Publish: public
+
+ANTES DO DEPLOY, crie a variavel de ambiente:
+SOCKET_SERVER_URL=https://SUA-URL-DO-RENDER.onrender.com
+
+Depois publique.
+
+4) OPCIONAL - TRAVAR CORS
+Depois de receber sua URL Netlify, no Render altere:
+CLIENT_ORIGIN=*
+para:
+CLIENT_ORIGIN=https://seu-site.netlify.app
+
+5) TESTE
+- Abra seu site Netlify.
+- Permita o microfone.
+- Copie o convite.
+- Abra o mesmo link em outro navegador/dispositivo.
+- A bolinha verde aparece somente quando o participante esta falando.
+
+IMPORTANTE
+- O audio e WebRTC P2P; o Render faz sinalizacao, nao transmite o audio.
+- Para algumas redes muito restritas pode ser necessario adicionar TURN.

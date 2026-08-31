@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#111214">
+    <meta
+        name="description"
+        content="Sala de voz simples e privada usando WebRTC."
+    >
+    <title>Mini Voice</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <div class="brand-row">
+                <div class="brand-mark" aria-hidden="true">M</div>
+                <div>
+                    <strong>Mini Voice</strong>
+                    <span>private room</span>
+                </div>
+            </div>
+
+            <div class="sidebar-section channel-section">
+                <p class="section-label">VOICE</p>
+                <div class="channel active">
+                    <span class="channel-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M5 9v6M9 6v12M13 4v16M17 7v10M21 10v4"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <strong>Geral</strong>
+                        <span><b id="sidebarCount">1</b> online</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-section people-section">
+                <div class="section-heading">
+                    <p class="section-label">NA SALA</p>
+                    <span id="membersCount">1</span>
+                </div>
+
+                <div class="people-list" id="peopleList">
+                    <div class="person-row" data-participant-id="self">
+                        <div class="avatar small-avatar">EU</div>
+                        <div class="person-copy">
+                            <strong>Você</strong>
+                            <span id="localSidebarStatus">conectando...</span>
+                        </div>
+                        <span class="voice-dot" aria-label="Falando"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-bottom">
+                <button class="copy-link" id="copyLinkButton" type="button">
+                    <span>Copiar convite</span>
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M10 14L14 10M8.5 16.5l-2 2a3.54 3.54 0 01-5-5l4-4a3.54 3.54 0 015 0M15.5 7.5l2-2a3.54 3.54 0 015 5l-4 4a3.54 3.54 0 01-5 0"/>
+                    </svg>
+                </button>
+                <input id="roomLink" class="sr-only" type="text" readonly tabindex="-1">
+            </div>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">CANAL DE VOZ</p>
+                    <h1>Geral</h1>
+                </div>
+
+                <div class="connection-pill" id="connectionPill">
+                    <span class="connection-dot"></span>
+                    <span id="connectionText">Preparando</span>
+                </div>
+            </header>
+
+            <section class="content">
+                <div class="content-heading">
+                    <div>
+                        <h2>Quem está aqui</h2>
+                        <p id="roomDescription">Preparando seu microfone.</p>
+                    </div>
+                    <button class="secondary-button" id="copyButton" type="button">
+                        Copiar link
+                    </button>
+                </div>
+
+                <div class="participant-grid" id="participantGrid">
+                    <article class="participant-card" data-participant-id="self">
+                        <div class="avatar-wrap">
+                            <div class="avatar">EU</div>
+                            <span class="voice-dot large" aria-label="Falando"></span>
+                        </div>
+                        <strong>Você</strong>
+                        <span class="participant-status" id="localStatus">Solicitando microfone...</span>
+                    </article>
+                </div>
+
+                <div class="empty-state" id="emptyState">
+                    <p>Você está sozinho nessa sala.</p>
+                    <button id="inviteButton" type="button">Copiar convite</button>
+                </div>
+            </section>
+
+            <footer class="controls">
+                <div class="control-group">
+                    <button class="control-button" id="micButton" type="button" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <rect x="9" y="3" width="6" height="11" rx="3"/>
+                            <path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21M9 21h6"/>
+                        </svg>
+                        <span id="micText">Microfone</span>
+                    </button>
+
+                    <button class="control-button" id="noiseButton" type="button" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M4 12h2M8 8v8M12 5v14M16 8v8M20 10v4"/>
+                        </svg>
+                        <span id="noiseText">Ruído</span>
+                        <span class="control-state-dot"></span>
+                    </button>
+                </div>
+
+                <button class="control-button danger" id="leaveButton" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M9 5H5a2 2 0 00-2 2v10a2 2 0 002 2h4M14 8l4 4-4 4M18 12H8"/>
+                    </svg>
+                    <span>Sair</span>
+                </button>
+            </footer>
+        </main>
+    </div>
+
+    <div id="audioContainer" hidden></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="/runtime-config.js"></script>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

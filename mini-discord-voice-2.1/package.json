@@ -1,0 +1,19 @@
+{
+  "name": "mini-discord-voice",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Minimal multi-user voice room using WebRTC and Socket.IO",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build:netlify": "node scripts/build-netlify.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
