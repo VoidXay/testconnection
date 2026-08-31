@@ -11,6 +11,7 @@ const TURN_CREDENTIAL = String(process.env.TURN_CREDENTIAL || "").trim();
 const TURN_URLS = parseTurnUrls(process.env.TURN_URLS);
 
 const screenSharers = new Map();
+const MAX_AVATAR_DATA_LENGTH = 180_000;
 
 const app = express();
 const server = http.createServer(app);
@@ -60,7 +61,7 @@ app.get("/health", (_req, res) => {
     res.status(200).json({
         ok: true,
         service: "mini-discord-voice",
-        version: "2.3.1",
+        version: "3.0.0",
         turnConfigured: Boolean(TURN_USERNAME && TURN_CREDENTIAL)
     });
 });
@@ -114,7 +115,7 @@ app.get("/:roomId", (req, res, next) => {
 });
 
 io.on("connection", (socket) => {
-    socket.on("join-room", ({ roomId } = {}) => {
+    socket.on("join-room", ({ roomId, profile } = {}) => {
         if (!isValidRoomId(roomId)) {
             socket.emit("room-error", {
                 message: "Invalid room link."
@@ -127,24 +128,49 @@ io.on("connection", (socket) => {
         const room = io.sockets.adapter.rooms.get(roomId);
         const existingParticipants = room ? Array.from(room) : [];
         const screenSharerId = getActiveScreenSharer(roomId);
+        const safeProfile = sanitizeProfile(profile);
+        const participantProfiles = getParticipantProfiles(existingParticipants);
 
         socket.join(roomId);
         socket.data.roomId = roomId;
+        socket.data.profile = safeProfile;
 
         socket.emit("room-joined", {
             roomId,
             participantId: socket.id,
             existingParticipants,
+            participantProfiles,
             participantCount: existingParticipants.length + 1,
             screenSharerId
         });
 
         socket.to(roomId).emit("participant-joined", {
             participantId: socket.id,
-            participantCount: existingParticipants.length + 1
+            participantCount: existingParticipants.length + 1,
+            profile: safeProfile
         });
 
         emitParticipantCount(roomId);
+    });
+
+    socket.on("update-profile", ({ profile } = {}, callback) => {
+        const reply = typeof callback === "function" ? callback : () => {};
+        const roomId = socket.data.roomId;
+
+        if (!isSocketInRoom(socket, roomId)) {
+            reply({ ok: false, reason: "not-in-room" });
+            return;
+        }
+
+        const safeProfile = sanitizeProfile(profile);
+        socket.data.profile = safeProfile;
+
+        socket.to(roomId).emit("participant-profile-updated", {
+            participantId: socket.id,
+            profile: safeProfile
+        });
+
+        reply({ ok: true, profile: safeProfile });
     });
 
     socket.on("request-screen-share", (_payload, callback) => {
@@ -239,6 +265,42 @@ io.on("connection", (socket) => {
         }
     });
 });
+
+function getParticipantProfiles(participantIds) {
+    const profiles = {};
+
+    for (const participantId of participantIds) {
+        const participantSocket = io.sockets.sockets.get(participantId);
+        profiles[participantId] = sanitizeProfile(participantSocket?.data?.profile);
+    }
+
+    return profiles;
+}
+
+function sanitizeProfile(profile) {
+    const displayName = String(profile?.displayName || "")
+        .replace(/[\u0000-\u001F\u007F]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 24) || "Convidado";
+
+    const avatarDataUrl = isSafeAvatarDataUrl(profile?.avatarDataUrl)
+        ? String(profile.avatarDataUrl)
+        : "";
+
+    return {
+        displayName,
+        avatarDataUrl
+    };
+}
+
+function isSafeAvatarDataUrl(value) {
+    if (typeof value !== "string" || value.length > MAX_AVATAR_DATA_LENGTH) {
+        return false;
+    }
+
+    return /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(value);
+}
 
 function parseAllowedOrigins(value) {
     return new Set(
@@ -367,5 +429,5 @@ function emitParticipantCount(roomId) {
 }
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Mini Discord Voice 2.3 listening on port ${PORT}`);
+    console.log(`Mini Meet 3.0 listening on port ${PORT}`);
 });

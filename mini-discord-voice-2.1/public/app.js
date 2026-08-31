@@ -24,11 +24,30 @@ let rtcConfiguration = {
 
 const SCREEN_SHARE_BITRATE = 2_500_000;
 const SCREEN_SHARE_REQUEST_TIMEOUT = 7000;
+const PROFILE_STORAGE_KEY = "mini-meet-profile-v1";
+const MAX_AVATAR_FILE_SIZE = 6 * 1024 * 1024;
+const MAX_AVATAR_DATA_LENGTH = 180_000;
 
 const elements = {
+    prejoin: document.getElementById("prejoin"),
+    appShell: document.getElementById("appShell"),
+    lobbyAvatarPreview: document.getElementById("lobbyAvatarPreview"),
+    avatarInput: document.getElementById("avatarInput"),
+    removeAvatarButton: document.getElementById("removeAvatarButton"),
+    nicknameInput: document.getElementById("nicknameInput"),
+    nicknameCount: document.getElementById("nicknameCount"),
+    joinButton: document.getElementById("joinButton"),
+    lobbyError: document.getElementById("lobbyError"),
+    lobbyRoomCode: document.getElementById("lobbyRoomCode"),
+    lobbyCopyLinkButton: document.getElementById("lobbyCopyLinkButton"),
+    roomCodeText: document.getElementById("roomCodeText"),
+    footerRoomCode: document.getElementById("footerRoomCode"),
     content: document.getElementById("content"),
     participantGrid: document.getElementById("participantGrid"),
     peopleList: document.getElementById("peopleList"),
+    peoplePanel: document.getElementById("peoplePanel"),
+    peopleButton: document.getElementById("peopleButton"),
+    closePeopleButton: document.getElementById("closePeopleButton"),
     emptyState: document.getElementById("emptyState"),
     sidebarCount: document.getElementById("sidebarCount"),
     membersCount: document.getElementById("membersCount"),
@@ -36,6 +55,9 @@ const elements = {
     copyButton: document.getElementById("copyButton"),
     copyLinkButton: document.getElementById("copyLinkButton"),
     inviteButton: document.getElementById("inviteButton"),
+    layoutButton: document.getElementById("layoutButton"),
+    profileButton: document.getElementById("profileButton"),
+    topProfileAvatar: document.getElementById("topProfileAvatar"),
     micButton: document.getElementById("micButton"),
     micText: document.getElementById("micText"),
     noiseButton: document.getElementById("noiseButton"),
@@ -48,19 +70,37 @@ const elements = {
     screenPlaceholder: document.getElementById("screenPlaceholder"),
     fullscreenButton: document.getElementById("fullscreenButton"),
     leaveButton: document.getElementById("leaveButton"),
+    localDisplayName: document.getElementById("localDisplayName"),
+    localSidebarName: document.getElementById("localSidebarName"),
     localStatus: document.getElementById("localStatus"),
     localSidebarStatus: document.getElementById("localSidebarStatus"),
     connectionPill: document.getElementById("connectionPill"),
     connectionText: document.getElementById("connectionText"),
     roomDescription: document.getElementById("roomDescription"),
+    profileModal: document.getElementById("profileModal"),
+    profileModalAvatarPreview: document.getElementById("profileModalAvatarPreview"),
+    profileModalAvatarInput: document.getElementById("profileModalAvatarInput"),
+    profileModalRemoveAvatarButton: document.getElementById("profileModalRemoveAvatarButton"),
+    profileModalNicknameInput: document.getElementById("profileModalNicknameInput"),
+    profileModalNicknameCount: document.getElementById("profileModalNicknameCount"),
+    profileModalError: document.getElementById("profileModalError"),
+    saveProfileButton: document.getElementById("saveProfileButton"),
+    cancelProfileButton: document.getElementById("cancelProfileButton"),
+    closeProfileModalButton: document.getElementById("closeProfileModalButton"),
     audioContainer: document.getElementById("audioContainer"),
     toast: document.getElementById("toast")
 };
 
 const peers = new Map();
 const audioContexts = new Set();
+const participantProfiles = new Map();
 
 let roomId = resolveRoomId();
+let localProfile = loadStoredProfile();
+let lobbyAvatarDraft = localProfile.avatarDataUrl;
+let modalAvatarDraft = localProfile.avatarDataUrl;
+let roomActive = false;
+let joiningRoom = false;
 let localStream = null;
 let localAudioMonitor = null;
 let localScreenStream = null;
@@ -74,66 +114,121 @@ let participantTotal = 1;
 let toastTimer = null;
 let hasLeftRoom = false;
 
-start().catch(handleStartupError);
+bootstrap().catch(handleStartupError);
 
-async function start() {
+async function bootstrap() {
     updateRoomUrl();
     bindUiEvents();
     updateEmptyState();
     updateParticipantCount();
     updateScreenShareUi();
+    populateLobbyFromProfile();
+    applyLocalProfileUi();
+    updateRoomCodeUi();
+    showPrejoin();
 
     if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("This browser does not support getUserMedia.");
+        setLobbyError("Seu navegador não suporta acesso ao microfone.");
+        elements.joinButton.disabled = true;
+        return;
     }
 
     if (!socketServerUrl && isStaticHost()) {
-        throw new Error(
-            "Missing SOCKET_SERVER_URL. Configure it in Netlify before publishing."
-        );
+        setLobbyError("O servidor Render ainda não foi configurado no Netlify.");
+        elements.joinButton.disabled = true;
+    }
+}
+
+async function enterRoomFromLobby() {
+    if (joiningRoom || roomActive) {
+        return;
     }
 
-    await loadIceConfiguration();
-    setConnectionStatus("Microfone", "waiting");
+    const displayName = normalizeDisplayName(elements.nicknameInput.value);
+    if (displayName.length < 2) {
+        setLobbyError("Digite um nick com pelo menos 2 caracteres.");
+        elements.nicknameInput.focus();
+        return;
+    }
 
-    localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            channelCount: 1
-        },
-        video: false
+    if (!socketServerUrl && isStaticHost()) {
+        setLobbyError("SOCKET_SERVER_URL não está configurado no Netlify.");
+        return;
+    }
+
+    joiningRoom = true;
+    setLobbyError("");
+    setJoinButtonLoading(true);
+
+    localProfile = sanitizeProfile({
+        displayName,
+        avatarDataUrl: lobbyAvatarDraft
     });
+    saveStoredProfile(localProfile);
+    applyLocalProfileUi();
 
-    const localTrack = localStream.getAudioTracks()[0];
+    try {
+        await loadIceConfiguration();
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                channelCount: 1
+            },
+            video: false
+        });
 
-    if (!localTrack) {
-        throw new Error("No audio track was returned by the browser.");
-    }
+        const localTrack = localStream.getAudioTracks()[0];
+        if (!localTrack) {
+            throw new Error("No audio track was returned by the browser.");
+        }
 
-    noiseSuppressionSupported = detectNoiseSuppressionSupport(localTrack);
+        noiseSuppressionSupported = detectNoiseSuppressionSupport(localTrack);
+        const settings = localTrack.getSettings?.() || {};
+        if (typeof settings.noiseSuppression === "boolean") {
+            noiseSuppressionEnabled = settings.noiseSuppression;
+        }
 
-    const settings = localTrack.getSettings?.() || {};
-    if (typeof settings.noiseSuppression === "boolean") {
-        noiseSuppressionEnabled = settings.noiseSuppression;
-    }
+        localAudioMonitor = createAudioActivityMonitor(localStream, "self");
+        roomActive = true;
+        hasLeftRoom = false;
 
-    localAudioMonitor = createAudioActivityMonitor(localStream, "self");
+        elements.micButton.disabled = false;
+        elements.noiseButton.disabled = !noiseSuppressionSupported;
+        elements.localStatus.textContent = "Microfone conectado";
+        elements.localSidebarStatus.textContent = "online";
+        elements.roomDescription.textContent = "Entrando na sala...";
 
-    elements.micButton.disabled = false;
-    elements.noiseButton.disabled = !noiseSuppressionSupported;
-    elements.localStatus.textContent = "Microfone conectado";
-    elements.localSidebarStatus.textContent = "online";
+        updateMicrophoneUi();
+        updateNoiseUi();
+        updateScreenShareUi();
+        showMeeting();
 
-    updateMicrophoneUi();
-    updateNoiseUi();
-    updateScreenShareUi();
+        if (socket.connected) {
+            joinRoom();
+        } else {
+            setConnectionStatus("Conectando", "waiting");
+        }
+    } catch (error) {
+        console.error("Could not enter room:", error);
+        if (localStream) {
+            stopStream(localStream);
+            localStream = null;
+        }
+        localAudioMonitor?.stop();
+        localAudioMonitor = null;
+        roomActive = false;
 
-    if (socket.connected) {
-        joinRoom();
-    } else {
-        setConnectionStatus("Conectando", "waiting");
+        if (error?.name === "NotAllowedError") {
+            setLobbyError("Permita o acesso ao microfone para entrar na sala.");
+        } else {
+            setLobbyError("Não foi possível preparar o microfone. Tente novamente.");
+        }
+        showPrejoin();
+    } finally {
+        joiningRoom = false;
+        setJoinButtonLoading(false);
     }
 }
 
@@ -174,11 +269,95 @@ function bindUiEvents() {
     elements.copyButton.addEventListener("click", copyRoomLink);
     elements.copyLinkButton.addEventListener("click", copyRoomLink);
     elements.inviteButton.addEventListener("click", copyRoomLink);
+    elements.lobbyCopyLinkButton.addEventListener("click", copyRoomLink);
+    elements.joinButton.addEventListener("click", enterRoomFromLobby);
+    elements.nicknameInput.addEventListener("input", () => {
+        updateNicknameCounter(elements.nicknameInput, elements.nicknameCount);
+        setLobbyError("");
+    });
+    elements.nicknameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            enterRoomFromLobby();
+        }
+    });
+    elements.avatarInput.addEventListener("change", async () => {
+        const [file] = elements.avatarInput.files || [];
+        if (!file) {
+            return;
+        }
+        try {
+            lobbyAvatarDraft = await processAvatarFile(file);
+            renderAvatarPreview(elements.lobbyAvatarPreview, {
+                displayName: elements.nicknameInput.value || localProfile.displayName,
+                avatarDataUrl: lobbyAvatarDraft
+            });
+            setLobbyError("");
+        } catch (error) {
+            setLobbyError(error.message || "Não foi possível usar essa imagem.");
+        } finally {
+            elements.avatarInput.value = "";
+        }
+    });
+    elements.removeAvatarButton.addEventListener("click", () => {
+        lobbyAvatarDraft = "";
+        renderAvatarPreview(elements.lobbyAvatarPreview, {
+            displayName: elements.nicknameInput.value || localProfile.displayName,
+            avatarDataUrl: ""
+        });
+    });
+
     elements.micButton.addEventListener("click", toggleMicrophone);
     elements.noiseButton.addEventListener("click", toggleNoiseSuppression);
     elements.screenButton.addEventListener("click", toggleScreenShare);
     elements.fullscreenButton.addEventListener("click", toggleScreenFullscreen);
     elements.leaveButton.addEventListener("click", leaveRoom);
+    elements.peopleButton.addEventListener("click", togglePeoplePanel);
+    elements.closePeopleButton.addEventListener("click", closePeoplePanel);
+    elements.layoutButton.addEventListener("click", () => {
+        document.body.classList.toggle("compact-grid");
+    });
+    elements.profileButton.addEventListener("click", openProfileModal);
+    elements.closeProfileModalButton.addEventListener("click", closeProfileModal);
+    elements.cancelProfileButton.addEventListener("click", closeProfileModal);
+    elements.saveProfileButton.addEventListener("click", saveProfileFromModal);
+    elements.profileModalNicknameInput.addEventListener("input", () => {
+        updateNicknameCounter(
+            elements.profileModalNicknameInput,
+            elements.profileModalNicknameCount
+        );
+        setProfileModalError("");
+    });
+    elements.profileModalAvatarInput.addEventListener("change", async () => {
+        const [file] = elements.profileModalAvatarInput.files || [];
+        if (!file) {
+            return;
+        }
+        try {
+            modalAvatarDraft = await processAvatarFile(file);
+            renderAvatarPreview(elements.profileModalAvatarPreview, {
+                displayName: elements.profileModalNicknameInput.value,
+                avatarDataUrl: modalAvatarDraft
+            });
+            setProfileModalError("");
+        } catch (error) {
+            setProfileModalError(error.message || "Não foi possível usar essa imagem.");
+        } finally {
+            elements.profileModalAvatarInput.value = "";
+        }
+    });
+    elements.profileModalRemoveAvatarButton.addEventListener("click", () => {
+        modalAvatarDraft = "";
+        renderAvatarPreview(elements.profileModalAvatarPreview, {
+            displayName: elements.profileModalNicknameInput.value,
+            avatarDataUrl: ""
+        });
+    });
+    elements.profileModal.addEventListener("click", (event) => {
+        if (event.target === elements.profileModal) {
+            closeProfileModal();
+        }
+    });
 
     const unlockMedia = () => {
         for (const context of audioContexts) {
@@ -186,23 +365,25 @@ function bindUiEvents() {
                 context.resume().catch(() => {});
             }
         }
-
         for (const peer of peers.values()) {
             peer.audioElement.play().catch(() => {});
         }
-
         if (elements.screenVideo.srcObject) {
             elements.screenVideo.play().catch(() => {});
         }
     };
 
     window.addEventListener("pointerdown", unlockMedia, { passive: true });
-
+    window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            closePeoplePanel();
+            closeProfileModal();
+        }
+    });
     window.addEventListener("beforeunload", () => {
-        if (!hasLeftRoom) {
+        if (roomActive) {
             socket.emit("leave-room");
         }
-
         cleanup();
     });
 }
@@ -246,6 +427,7 @@ function updateRoomUrl() {
     }
 
     elements.roomLink.value = window.location.href;
+    updateRoomCodeUi();
 }
 
 async function copyRoomLink() {
@@ -802,19 +984,23 @@ async function toggleScreenFullscreen() {
 }
 
 function joinRoom() {
-    if (!localStream || hasLeftRoom) {
+    if (!localStream || hasLeftRoom || !roomActive) {
         return;
     }
 
-    socket.emit("join-room", { roomId });
+    socket.emit("join-room", {
+        roomId,
+        profile: localProfile
+    });
 }
 
 async function leaveRoom() {
-    if (hasLeftRoom) {
+    if (!roomActive) {
         return;
     }
 
     hasLeftRoom = true;
+    roomActive = false;
 
     if (localScreenStream) {
         await stopLocalScreenShare(true);
@@ -822,27 +1008,29 @@ async function leaveRoom() {
 
     socket.emit("leave-room");
     cleanup();
-    socket.disconnect();
+    participantProfiles.clear();
+    closePeoplePanel();
 
     elements.micButton.disabled = true;
     elements.noiseButton.disabled = true;
     elements.screenButton.disabled = true;
-    elements.localStatus.textContent = "Você saiu da sala";
+    elements.localStatus.textContent = "Fora da chamada";
     elements.localSidebarStatus.textContent = "offline";
-    elements.roomDescription.textContent = "Atualize a página para entrar novamente.";
+    elements.roomDescription.textContent = "Entre novamente quando quiser.";
 
-    setConnectionStatus("Desconectado", "error");
-    showToast("Você saiu da sala.");
+    populateLobbyFromProfile();
+    showPrejoin();
+    setConnectionStatus("Pronto", "waiting");
 }
 
 socket.on("connect", () => {
-    if (localStream && !hasLeftRoom) {
+    if (roomActive && localStream && !hasLeftRoom) {
         joinRoom();
     }
 });
 
 socket.on("disconnect", (reason) => {
-    if (hasLeftRoom) {
+    if (!roomActive || hasLeftRoom) {
         return;
     }
 
@@ -855,13 +1043,16 @@ socket.on("disconnect", (reason) => {
 
 socket.on("connect_error", (error) => {
     console.error("Socket connection failed:", error);
-    setConnectionStatus("Servidor offline", "error");
+    if (roomActive) {
+        setConnectionStatus("Servidor offline", "error");
+    }
 });
 
 socket.on("room-joined", async ({
     existingParticipants,
     participantCount,
-    screenSharerId
+    screenSharerId,
+    participantProfiles: profilesById
 }) => {
     participantTotal = participantCount;
     updateParticipantCount();
@@ -871,11 +1062,13 @@ socket.on("room-joined", async ({
 
     elements.roomDescription.textContent =
         existingParticipants.length === 0
-            ? "Só você por enquanto. Compartilhe o link para alguém entrar."
-            : "Áudio conectado entre os participantes.";
+            ? "Só você por enquanto. Convide alguém para entrar."
+            : `${participantCount} pessoas conectadas na sala.`;
 
     for (const participantId of existingParticipants) {
-        ensureParticipantUi(participantId);
+        const profile = sanitizeProfile(profilesById?.[participantId]);
+        participantProfiles.set(participantId, profile);
+        ensureParticipantUi(participantId, profile);
         await createPeerConnection(participantId, true);
     }
 
@@ -888,16 +1081,17 @@ socket.on("room-joined", async ({
     updateEmptyState();
 });
 
-socket.on("participant-joined", ({ participantId, participantCount }) => {
+socket.on("participant-joined", ({ participantId, participantCount, profile }) => {
     if (!participantId || participantId === socket.id) {
         return;
     }
 
     participantTotal = participantCount;
+    participantProfiles.set(participantId, sanitizeProfile(profile));
     updateParticipantCount();
-    ensureParticipantUi(participantId);
+    ensureParticipantUi(participantId, profile);
     updateEmptyState();
-    elements.roomDescription.textContent = "Sala de voz ativa.";
+    elements.roomDescription.textContent = `${participantTotal} pessoas conectadas na sala.`;
 });
 
 socket.on("participant-left", ({ participantId }) => {
@@ -907,7 +1101,22 @@ socket.on("participant-left", ({ participantId }) => {
 
     removePeer(participantId);
     removeParticipantUi(participantId);
+    participantProfiles.delete(participantId);
     updateEmptyState();
+});
+
+socket.on("participant-profile-updated", ({ participantId, profile }) => {
+    if (!participantId || participantId === socket.id) {
+        return;
+    }
+
+    const safeProfile = sanitizeProfile(profile);
+    participantProfiles.set(participantId, safeProfile);
+    updateParticipantProfileUi(participantId, safeProfile);
+
+    if (activeScreenSharerId === participantId) {
+        refreshScreenStage();
+    }
 });
 
 socket.on("participant-count", ({ participantCount }) => {
@@ -1230,8 +1439,18 @@ async function flushIceCandidates(peer) {
     }
 }
 
-function ensureParticipantUi(participantId) {
-    if (!participantId || getParticipantCard(participantId)) {
+function ensureParticipantUi(participantId, suppliedProfile) {
+    if (!participantId) {
+        return;
+    }
+
+    if (suppliedProfile) {
+        participantProfiles.set(participantId, sanitizeProfile(suppliedProfile));
+    }
+
+    const existingCard = getParticipantCard(participantId);
+    if (existingCard) {
+        updateParticipantProfileUi(participantId, participantProfiles.get(participantId));
         return;
     }
 
@@ -1241,12 +1460,22 @@ function ensureParticipantUi(participantId) {
     card.className = "participant-card";
     card.dataset.participantId = participantId;
     card.innerHTML = `
-        <span class="screen-card-badge" data-role="screen-badge">TELA</span>
-        <div class="avatar-wrap">
-            <div class="avatar">${escapeHtml(label.initials)}</div>
+        <span class="screen-card-badge" data-role="screen-badge">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="13" rx="2"/>
+                <path d="M9 21h6M12 17v4"/>
+            </svg>
+            Apresentando
+        </span>
+        <div class="participant-avatar-shell" data-role="avatar">
+            ${renderParticipantAvatarMarkup(label, "participant-avatar")}
+        </div>
+        <div class="participant-card-footer">
+            <div class="participant-name-line">
+                <strong data-role="participant-name">${escapeHtml(label.name)}</strong>
+            </div>
             <span class="voice-dot large" aria-label="Falando"></span>
         </div>
-        <strong>${escapeHtml(label.name)}</strong>
         <span class="participant-status" data-role="status">conectando...</span>
     `;
     elements.participantGrid.appendChild(card);
@@ -1255,10 +1484,12 @@ function ensureParticipantUi(participantId) {
     person.className = "person-row";
     person.dataset.participantId = participantId;
     person.innerHTML = `
-        <div class="avatar small-avatar">${escapeHtml(label.initials)}</div>
+        <div class="person-avatar" data-role="avatar">
+            ${renderParticipantAvatarMarkup(label, "person-avatar-inner")}
+        </div>
         <div class="person-copy">
-            <strong>${escapeHtml(label.name)}</strong>
-            <span>online</span>
+            <strong data-role="participant-name">${escapeHtml(label.name)}</strong>
+            <span data-role="sidebar-status">online</span>
         </div>
         <span class="screen-mini-badge" data-role="screen-badge" aria-label="Compartilhando tela">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1328,6 +1559,14 @@ function setParticipantStatus(participantId, text) {
     if (status) {
         status.textContent = text;
     }
+
+    const personRow = elements.peopleList.querySelector(
+        `[data-participant-id="${cssEscape(participantId)}"]`
+    );
+    const sidebarStatus = personRow?.querySelector('[data-role="sidebar-status"]');
+    if (sidebarStatus) {
+        sidebarStatus.textContent = text.includes("conect") ? "online" : text;
+    }
 }
 
 function setParticipantSpeaking(participantId, speaking) {
@@ -1337,12 +1576,15 @@ function setParticipantSpeaking(participantId, speaking) {
 }
 
 function createParticipantLabel(participantId) {
-    const shortId = participantId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4);
-    const suffix = shortId || "user";
+    const profile = participantId === socket.id
+        ? localProfile
+        : sanitizeProfile(participantProfiles.get(participantId));
+    const name = profile.displayName || "Convidado";
 
     return {
-        name: `Pessoa ${suffix.toUpperCase()}`,
-        initials: suffix.slice(0, 2).toUpperCase()
+        name,
+        initials: getInitials(name),
+        avatarDataUrl: profile.avatarDataUrl || ""
     };
 }
 
@@ -1495,29 +1737,302 @@ function cleanup() {
 
 function handleStartupError(error) {
     console.error(error);
+    setLobbyError("Não foi possível iniciar a página. Atualize e tente novamente.");
+    showPrejoin();
+}
 
-    const isConfigurationError = String(error?.message || "").includes(
-        "SOCKET_SERVER_URL"
+function populateLobbyFromProfile() {
+    elements.nicknameInput.value = localProfile.displayName || "";
+    lobbyAvatarDraft = localProfile.avatarDataUrl || "";
+    updateNicknameCounter(elements.nicknameInput, elements.nicknameCount);
+    renderAvatarPreview(elements.lobbyAvatarPreview, localProfile);
+}
+
+function updateRoomCodeUi() {
+    const shortCode = roomId.length > 18 ? `${roomId.slice(0, 18)}…` : roomId;
+    elements.lobbyRoomCode.textContent = shortCode;
+    elements.roomCodeText.textContent = shortCode;
+    elements.footerRoomCode.textContent = shortCode;
+}
+
+function showPrejoin() {
+    elements.prejoin.classList.remove("is-hidden");
+    elements.appShell.classList.add("is-hidden");
+    elements.appShell.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("people-open");
+}
+
+function showMeeting() {
+    elements.prejoin.classList.add("is-hidden");
+    elements.appShell.classList.remove("is-hidden");
+    elements.appShell.setAttribute("aria-hidden", "false");
+}
+
+function setJoinButtonLoading(loading) {
+    elements.joinButton.disabled = loading;
+    elements.joinButton.querySelector("span").textContent = loading
+        ? "Preparando chamada..."
+        : "Entrar na sala";
+}
+
+function setLobbyError(message) {
+    elements.lobbyError.textContent = message || "";
+}
+
+function updateNicknameCounter(input, counter) {
+    counter.textContent = `${input.value.length}/24`;
+}
+
+function togglePeoplePanel() {
+    const opening = !document.body.classList.contains("people-open");
+    document.body.classList.toggle("people-open", opening);
+    elements.peoplePanel.setAttribute("aria-hidden", opening ? "false" : "true");
+}
+
+function closePeoplePanel() {
+    document.body.classList.remove("people-open");
+    elements.peoplePanel.setAttribute("aria-hidden", "true");
+}
+
+function openProfileModal() {
+    modalAvatarDraft = localProfile.avatarDataUrl || "";
+    elements.profileModalNicknameInput.value = localProfile.displayName || "";
+    updateNicknameCounter(
+        elements.profileModalNicknameInput,
+        elements.profileModalNicknameCount
     );
+    renderAvatarPreview(elements.profileModalAvatarPreview, localProfile);
+    setProfileModalError("");
+    elements.profileModal.hidden = false;
+    setTimeout(() => elements.profileModalNicknameInput.focus(), 0);
+}
 
-    setConnectionStatus(
-        isConfigurationError ? "Configurar servidor" : "Erro no microfone",
-        "error"
-    );
+function closeProfileModal() {
+    if (!elements.profileModal.hidden) {
+        elements.profileModal.hidden = true;
+    }
+}
 
-    elements.localStatus.textContent = isConfigurationError
-        ? "Servidor Render não configurado"
-        : "Microfone indisponível";
-    elements.localSidebarStatus.textContent = "offline";
-    elements.roomDescription.textContent = isConfigurationError
-        ? "Defina SOCKET_SERVER_URL no Netlify com a URL do seu serviço no Render."
-        : "Permita o acesso ao microfone e atualize a página.";
+function setProfileModalError(message) {
+    elements.profileModalError.textContent = message || "";
+}
 
-    showToast(
-        isConfigurationError
-            ? "Configure SOCKET_SERVER_URL no Netlify."
-            : "Não foi possível acessar o microfone."
-    );
+function saveProfileFromModal() {
+    const displayName = normalizeDisplayName(elements.profileModalNicknameInput.value);
+    if (displayName.length < 2) {
+        setProfileModalError("Digite um nick com pelo menos 2 caracteres.");
+        return;
+    }
+
+    const nextProfile = sanitizeProfile({
+        displayName,
+        avatarDataUrl: modalAvatarDraft
+    });
+
+    localProfile = nextProfile;
+    lobbyAvatarDraft = nextProfile.avatarDataUrl;
+    saveStoredProfile(nextProfile);
+    applyLocalProfileUi();
+    populateLobbyFromProfile();
+    closeProfileModal();
+
+    if (roomActive && socket.connected) {
+        socket.emit("update-profile", { profile: nextProfile }, (response) => {
+            if (!response?.ok) {
+                showToast("O perfil foi salvo localmente, mas não sincronizou com a sala.");
+            }
+        });
+    }
+
+    showToast("Perfil atualizado.");
+}
+
+function applyLocalProfileUi() {
+    const label = {
+        name: localProfile.displayName || "Você",
+        initials: getInitials(localProfile.displayName || "Você"),
+        avatarDataUrl: localProfile.avatarDataUrl || ""
+    };
+
+    elements.localDisplayName.textContent = label.name;
+    elements.localSidebarName.textContent = label.name;
+    renderAvatarPreview(elements.topProfileAvatar, localProfile);
+
+    selectParticipantElements("self").forEach((element) => {
+        const nameElement = element.querySelector('[data-role="participant-name"]');
+        if (nameElement) {
+            nameElement.textContent = label.name;
+        }
+        const avatarElement = element.querySelector('[data-role="avatar"]');
+        if (avatarElement) {
+            avatarElement.innerHTML = renderParticipantAvatarMarkup(
+                label,
+                element.classList.contains("person-row")
+                    ? "person-avatar-inner"
+                    : "participant-avatar"
+            );
+        }
+    });
+}
+
+function updateParticipantProfileUi(participantId, suppliedProfile) {
+    const safeProfile = sanitizeProfile(suppliedProfile);
+    participantProfiles.set(participantId, safeProfile);
+    const label = {
+        name: safeProfile.displayName || "Convidado",
+        initials: getInitials(safeProfile.displayName || "Convidado"),
+        avatarDataUrl: safeProfile.avatarDataUrl || ""
+    };
+
+    selectParticipantElements(participantId).forEach((element) => {
+        const nameElement = element.querySelector('[data-role="participant-name"]');
+        if (nameElement) {
+            nameElement.textContent = label.name;
+        }
+        const avatarElement = element.querySelector('[data-role="avatar"]');
+        if (avatarElement) {
+            avatarElement.innerHTML = renderParticipantAvatarMarkup(
+                label,
+                element.classList.contains("person-row")
+                    ? "person-avatar-inner"
+                    : "participant-avatar"
+            );
+        }
+    });
+}
+
+function renderParticipantAvatarMarkup(label, className) {
+    if (isSafeAvatarDataUrl(label.avatarDataUrl)) {
+        return `<div class="${className}"><img src="${label.avatarDataUrl}" alt=""></div>`;
+    }
+    return `<div class="${className}">${escapeHtml(label.initials)}</div>`;
+}
+
+function renderAvatarPreview(container, profile) {
+    const displayName = normalizeDisplayName(profile?.displayName || "") || "Você";
+    const avatarDataUrl = isSafeAvatarDataUrl(profile?.avatarDataUrl)
+        ? String(profile.avatarDataUrl)
+        : "";
+    const initials = getInitials(displayName);
+    if (avatarDataUrl) {
+        container.innerHTML = `<img src="${avatarDataUrl}" alt="">`;
+    } else {
+        container.innerHTML = `<span>${escapeHtml(initials)}</span>`;
+    }
+}
+
+function loadStoredProfile() {
+    try {
+        const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+        if (!raw) {
+            return { displayName: "", avatarDataUrl: "" };
+        }
+        return sanitizeProfile(JSON.parse(raw));
+    } catch {
+        return { displayName: "", avatarDataUrl: "" };
+    }
+}
+
+function saveStoredProfile(profile) {
+    try {
+        window.localStorage.setItem(
+            PROFILE_STORAGE_KEY,
+            JSON.stringify(sanitizeProfile(profile))
+        );
+    } catch (error) {
+        console.warn("Could not save profile locally:", error);
+    }
+}
+
+function sanitizeProfile(profile) {
+    const displayName = normalizeDisplayName(profile?.displayName || "");
+    const avatarDataUrl = isSafeAvatarDataUrl(profile?.avatarDataUrl)
+        ? String(profile.avatarDataUrl)
+        : "";
+
+    return {
+        displayName: displayName || "Convidado",
+        avatarDataUrl
+    };
+}
+
+function normalizeDisplayName(value) {
+    return String(value || "")
+        .replace(/[\u0000-\u001F\u007F]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 24);
+}
+
+function getInitials(name) {
+    const parts = normalizeDisplayName(name).split(" ").filter(Boolean);
+    if (parts.length === 0) {
+        return "?";
+    }
+    if (parts.length === 1) {
+        return parts[0].slice(0, 2).toUpperCase();
+    }
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function isSafeAvatarDataUrl(value) {
+    if (typeof value !== "string" || value.length > MAX_AVATAR_DATA_LENGTH) {
+        return false;
+    }
+    return /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/i.test(value);
+}
+
+async function processAvatarFile(file) {
+    if (!file.type.match(/^image\/(png|jpeg|webp)$/)) {
+        throw new Error("Use uma imagem PNG, JPG ou WEBP.");
+    }
+    if (file.size > MAX_AVATAR_FILE_SIZE) {
+        throw new Error("A imagem precisa ter no máximo 6 MB.");
+    }
+
+    const image = await loadImageFile(file);
+    const size = 256;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) {
+        throw new Error("Seu navegador não conseguiu processar a imagem.");
+    }
+
+    const scale = Math.max(size / image.width, size / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+    const x = (size - width) / 2;
+    const y = (size - height) / 2;
+    context.fillStyle = "#22262b";
+    context.fillRect(0, 0, size, size);
+    context.drawImage(image, x, y, width, height);
+
+    let result = canvas.toDataURL("image/webp", 0.82);
+    if (!isSafeAvatarDataUrl(result)) {
+        result = canvas.toDataURL("image/jpeg", 0.72);
+    }
+    if (!isSafeAvatarDataUrl(result)) {
+        throw new Error("A foto ficou grande demais. Tente outra imagem.");
+    }
+    return result;
+}
+
+function loadImageFile(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(image);
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error("Não foi possível abrir essa imagem."));
+        };
+        image.src = url;
+    });
 }
 
 function showToast(message) {
